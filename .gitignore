@@ -41,6 +41,8 @@ google-services.json
 GoogleService-Info.plist
 secrets/firebase/*
 !secrets/firebase/.gitkeep
+!secrets/firebase/google-services.json
+!secrets/firebase/GoogleService-Info.plist
 
 # typescript
 *.tsbuildinfo
