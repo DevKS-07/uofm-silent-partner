@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "SocialWingman",
+    "slug": "socialwingman",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.silentpartner.app",
+      "googleServicesFile": "./secrets/firebase/GoogleService-Info.plist",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.silentpartner.app",
+      "googleServicesFile": "./secrets/firebase/google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-audio",
+      [
+        "@siteed/expo-audio-studio",
+        {
+          "microphonePermission": "Listen to conversation for social coaching."
+        }
+      ],
+      "@react-native-firebase/app",
+      [
+        "@embrace-io/react-native/lib/app.plugin.js",
+        {
+          "androidAppId": "v5dj8",
+          "iOSAppId": "v5dj8",
+          "apiToken": "dd656276c6f543db996b8f7d93b44437"
+        }
+      ],
+      "@react-native-firebase/auth",
+      "expo-secure-store"
+    ]
+  }
+}

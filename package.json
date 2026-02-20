@@ -1,0 +1,43 @@
+{
+  "name": "zzzumhackathon",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck"
+  },
+  "dependencies": {
+    "@embrace-io/react-native": "^6.4.0",
+    "@embrace-io/react-native-tracer-provider": "^6.4.0",
+    "@openai/realtime-api-beta": "github:openai/openai-realtime-api-beta",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-trace-base": "^2.5.1",
+    "@react-native-firebase/app": "^23.8.6",
+    "@react-native-firebase/auth": "^23.8.6",
+    "@react-native-firebase/firestore": "^23.8.6",
+    "@siteed/expo-audio-studio": "^2.18.4",
+    "expo": "~54.0.33",
+    "expo-audio": "~1.1.1",
+    "expo-dev-client": "~6.0.20",
+    "expo-haptics": "~15.0.8",
+    "expo-router": "^6.0.23",
+    "expo-secure-store": "~15.0.8",
+    "expo-status-bar": "~3.0.9",
+    "firebase": "^12.9.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "babel-preset-expo": "^54.0.10",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}
