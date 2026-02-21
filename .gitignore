@@ -50,3 +50,4 @@ secrets/firebase/*
 # generated native folders
 /ios
 /android
+.vscode
