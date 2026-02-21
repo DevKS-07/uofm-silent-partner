@@ -41,6 +41,58 @@ const pickConversationText = (payload: RealtimeServerEvent): string => {
   return text;
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const postSdpWithRetry = async (
+  ephemeralApiKey: string,
+  model: string,
+  offerSdp: string,
+): Promise<string> => {
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(
+        `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(model)}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${ephemeralApiKey}`,
+            'Content-Type': 'application/sdp',
+          },
+          body: offerSdp,
+        },
+      );
+
+      if (response.ok) {
+        return await response.text();
+      }
+
+      const responseText = await response.text();
+      const retriable = [408, 429, 500, 502, 503, 504].includes(response.status);
+      lastError = new Error(
+        `[AI] WebRTC SDP exchange failed (${response.status}): ${responseText}`,
+      );
+
+      if (!retriable || attempt === maxAttempts) {
+        throw lastError;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown SDP exchange error.';
+      lastError = error instanceof Error ? error : new Error(message);
+
+      if (attempt === maxAttempts) {
+        throw lastError;
+      }
+    }
+
+    await sleep(500 * attempt);
+  }
+
+  throw lastError ?? new Error('[AI] WebRTC SDP exchange failed.');
+};
+
 export const startAiRealtimeSession = async (
   callbacks: AiRealtimeCallbacks,
 ): Promise<AiRealtimeSessionHandle> => {
@@ -56,6 +108,7 @@ export const startAiRealtimeSession = async (
   });
 
   let isClosed = false;
+  let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const emit = (type: AiEventType, message: string) => {
     callbacks.onClientEvent?.(type, message);
@@ -84,6 +137,11 @@ export const startAiRealtimeSession = async (
     }
 
     callbacks.onStopped?.();
+
+    if (disconnectTimer) {
+      clearTimeout(disconnectTimer);
+      disconnectTimer = null;
+    }
   };
 
   dataChannelAny.onopen = () => {
@@ -95,7 +153,9 @@ export const startAiRealtimeSession = async (
       session: {
         type: 'realtime',
         instructions:
-          'You are a silent social coach. Do not proactively respond. Listen continuously. Only produce output when the client explicitly sends response.create asking for a nudge.',
+          'You are a silent social coach. Always use English only. Do not proactively respond. Listen continuously. ' +
+          'Track tone, energy, and social dynamics (friendly, formal, playful, serious). ' +
+          'Only produce output when the client explicitly sends response.create asking for a nudge.',
         output_modalities: ['text'],
         audio: {
           input: {
@@ -170,33 +230,36 @@ export const startAiRealtimeSession = async (
 
   peerAny.onconnectionstatechange = () => {
     emit('webrtc', `Peer state: ${peer.connectionState}`);
-    if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') {
+
+    if (peer.connectionState === 'connected' && disconnectTimer) {
+      clearTimeout(disconnectTimer);
+      disconnectTimer = null;
+    }
+
+    if (peer.connectionState === 'failed' || peer.connectionState === 'closed') {
       callbacks.onError?.(new Error(`Peer connection ${peer.connectionState}.`));
+    }
+
+    if (peer.connectionState === 'disconnected') {
+      if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+      }
+      disconnectTimer = setTimeout(() => {
+        if (peer.connectionState === 'disconnected') {
+          callbacks.onError?.(new Error('Peer connection disconnected for too long.'));
+        }
+      }, 8000);
     }
   };
 
   const offer = await peer.createOffer({ offerToReceiveAudio: true });
   await peer.setLocalDescription(offer);
 
-  const response = await fetch(
-    `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(credentials.model)}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${credentials.ephemeralApiKey}`,
-        'Content-Type': 'application/sdp',
-      },
-      body: offer.sdp ?? '',
-    },
+  const answerSdp = await postSdpWithRetry(
+    credentials.ephemeralApiKey,
+    credentials.model,
+    offer.sdp ?? '',
   );
-
-  if (!response.ok) {
-    const text = await response.text();
-    await safeStop();
-    throw new Error(`[AI] WebRTC SDP exchange failed (${response.status}): ${text}`);
-  }
-
-  const answerSdp = await response.text();
   await peer.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answerSdp }));
 
   emit('webrtc', 'Peer connection established.');
@@ -210,7 +273,11 @@ export const startAiRealtimeSession = async (
           response: {
             output_modalities: ['text'],
             instructions:
-              'Give exactly one short line I can say next in this conversation. Keep it natural, specific, and under 18 words.',
+              'English only. You are coaching the device owner (me), not the other speaker. ' +
+              'Output exactly one short line that I should say next, in first person voice, under 18 words. ' +
+              'Mirror the current tone of the conversation: if playful, be witty; if serious, be respectful and grounded. ' +
+              'Use light humor only when context supports it, never forced. ' +
+              'Do not write the other person\'s reply. Do not add labels, quotes, or explanations.',
           },
         };
         dataChannelAny.send(JSON.stringify(createResponse));

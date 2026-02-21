@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../../providers/theme-provider';
+import { type LinkedInConnectionSummary } from '../../../services/linkedin';
+import { useLinkedInConnect } from '../hooks/use-linkedin-connect';
 import { AnimatedOption } from './animated-option';
 
 const ITEMS = [
@@ -16,15 +19,44 @@ const ITEMS = [
 export const ProfessionalIdentityScreen = () => {
   const router = useRouter();
   const theme = useTheme();
+  const [linkedInConnected, setLinkedInConnected] = useState(false);
+  const [linkedInProfile, setLinkedInProfile] = useState<LinkedInConnectionSummary | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [connectNotice, setConnectNotice] = useState<string | null>(null);
+  const linkedIn = useLinkedInConnect();
+
+  const handleLinkedInConnect = async () => {
+    setConnectNotice(null);
+    setConnectError(null);
+    setLinkedInProfile(null);
+    const result = await linkedIn.connect();
+
+    if (result.status === 'connected') {
+      setLinkedInConnected(true);
+      setLinkedInProfile(result.profile ?? null);
+      return;
+    }
+
+    if (result.status === 'cancelled') {
+      setConnectNotice('LinkedIn sign-in was cancelled before completion.');
+      return;
+    }
+
+    if (result.status === 'error') {
+      setLinkedInConnected(false);
+      setConnectError(result.message ?? 'Something went wrong. Please try again.');
+    }
+  };
 
   const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: theme.colors.white },
     container: {
-      flex: 1,
+      flexGrow: 1,
       paddingHorizontal: 20,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.white,
+      paddingVertical: 24,
     },
     iconWrap: {
       marginBottom: 18,
@@ -90,6 +122,9 @@ export const ProfessionalIdentityScreen = () => {
     },
     connectInner: { flexDirection: 'row', alignItems: 'center' },
     connectText: { color: theme.colors.white, fontWeight: '700', fontSize: 16 },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
     listeningButton: {
       width: '90%',
       backgroundColor: theme.colors.white,
@@ -111,11 +146,81 @@ export const ProfessionalIdentityScreen = () => {
       marginTop: 12,
       fontSize: 12,
     },
+    statusCard: {
+      width: '90%',
+      borderRadius: 12,
+      padding: 14,
+      marginTop: 14,
+      borderWidth: 1,
+    },
+    successCard: {
+      backgroundColor: '#F4FBF8',
+      borderColor: '#B9E7D3',
+    },
+    errorCard: {
+      backgroundColor: '#FFF5F5',
+      borderColor: '#F3C3C3',
+    },
+    statusTitle: {
+      fontWeight: '700',
+      color: theme.colors.black,
+      marginBottom: 8,
+    },
+    profileRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    profileImage: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      marginRight: 10,
+      backgroundColor: '#E8E8E8',
+    },
+    profileLabel: {
+      color: theme.colors.mediumGray,
+      fontSize: 12,
+    },
+    profileValue: {
+      color: theme.colors.darkGray,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    continueButton: {
+      marginTop: 10,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 10,
+      paddingVertical: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    continueText: {
+      color: theme.colors.white,
+      fontWeight: '700',
+    },
+    errorText: {
+      color: '#A11A1A',
+      fontSize: 13,
+    },
+    noticeCard: {
+      width: '90%',
+      borderRadius: 12,
+      padding: 14,
+      marginTop: 10,
+      borderWidth: 1,
+      backgroundColor: '#F7F8FA',
+      borderColor: '#D3D8E0',
+    },
+    noticeText: {
+      color: theme.colors.darkGray,
+      fontSize: 13,
+    },
   });
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.iconWrap}>
           <View style={styles.appIcon}>
             <Ionicons name="person-outline" size={36} color={theme.colors.white} />
@@ -137,10 +242,24 @@ export const ProfessionalIdentityScreen = () => {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.connectButton} onPress={() => router.push('/primary-goal')}>
+        <TouchableOpacity
+          style={[styles.connectButton, linkedIn.isLoading ? styles.buttonDisabled : null]}
+          onPress={() => void handleLinkedInConnect()}
+          disabled={linkedIn.isLoading}
+        >
           <View style={styles.connectInner}>
-            <Ionicons name="logo-linkedin" size={20} color={theme.colors.white} />
-            <Text style={styles.connectText}>  Connect LinkedIn</Text>
+            {linkedIn.isLoading ? (
+              <ActivityIndicator size="small" color={theme.colors.white} />
+            ) : (
+              <Ionicons name="logo-linkedin" size={20} color={theme.colors.white} />
+            )}
+            <Text style={styles.connectText}>
+              {linkedIn.isLoading
+                ? '  Connecting...'
+                : linkedInConnected
+                  ? '  LinkedIn Connected'
+                  : '  Connect LinkedIn'}
+            </Text>
           </View>
         </TouchableOpacity>
         <TouchableOpacity
@@ -151,7 +270,47 @@ export const ProfessionalIdentityScreen = () => {
         </TouchableOpacity>
 
         <Text style={styles.privacy}>Your data is encrypted and never sold.</Text>
-      </View>
+
+        {linkedInConnected && linkedInProfile ? (
+          <View style={[styles.statusCard, styles.successCard]}>
+            <Text style={styles.statusTitle}>LinkedIn connected successfully</Text>
+            <View style={styles.profileRow}>
+              {linkedInProfile.picture ? (
+                <Image source={{ uri: linkedInProfile.picture }} style={styles.profileImage} />
+              ) : (
+                <View style={styles.profileImage} />
+              )}
+              <View>
+                <Text style={styles.profileLabel}>Name</Text>
+                <Text style={styles.profileValue}>{linkedInProfile.name || 'Not available'}</Text>
+              </View>
+            </View>
+            <Text style={styles.profileLabel}>Email</Text>
+            <Text style={styles.profileValue}>{linkedInProfile.email || 'Not available'}</Text>
+            <Text style={styles.profileLabel}>Headline</Text>
+            <Text style={styles.profileValue}>{linkedInProfile.headline || 'Not available'}</Text>
+            <Text style={styles.profileLabel}>
+              Positions: {linkedInProfile.positionCount} | Education: {linkedInProfile.educationCount}
+            </Text>
+            <TouchableOpacity style={styles.continueButton} onPress={() => router.push('/primary-goal')}>
+              <Text style={styles.continueText}>Continue</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {connectError ? (
+          <View style={[styles.statusCard, styles.errorCard]}>
+            <Text style={styles.statusTitle}>LinkedIn connection failed</Text>
+            <Text style={styles.errorText}>{connectError}</Text>
+          </View>
+        ) : null}
+
+        {connectNotice ? (
+          <View style={styles.noticeCard}>
+            <Text style={styles.noticeText}>{connectNotice}</Text>
+          </View>
+        ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 };

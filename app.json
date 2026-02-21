@@ -2,6 +2,7 @@
   "expo": {
     "name": "SocialWingman",
     "slug": "socialwingman",
+    "scheme": "networkingapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -68,7 +69,8 @@
       ],
       "@react-native-firebase/auth",
       "expo-secure-store",
-      "@config-plugins/react-native-webrtc"
+      "@config-plugins/react-native-webrtc",
+      "expo-web-browser"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../../providers/theme-provider';
@@ -125,6 +125,11 @@ export const AiListeningEngineScreen = () => {
       color: theme.colors.darkGray,
       fontSize: 15,
       fontWeight: '700',
+    },
+    resetButton: {
+      backgroundColor: theme.colors.white,
+      borderWidth: 1,
+      borderColor: theme.colors.borderColor,
     },
     errorText: {
       color: theme.colors.error,
@@ -266,8 +271,28 @@ export const AiListeningEngineScreen = () => {
             disabled={!isRunning}
             onPress={engine.nudge}
           >
-            <Text style={styles.buttonText}>Nudge Me</Text>
+            {engine.nudgeLoading ? (
+              <ActivityIndicator color={theme.colors.white} />
+            ) : (
+              <Text style={styles.buttonText}>Nudge Me</Text>
+            )}
           </Pressable>
+        </View>
+        <View style={styles.singleActionRow}>
+          <Pressable style={[styles.button, styles.resetButton]} onPress={engine.reset}>
+            <Text style={styles.buttonTextDark}>Reset</Text>
+          </Pressable>
+        </View>
+        <View style={styles.nudgePanel}>
+          {engine.nudgeLoading ? (
+            <ActivityIndicator color={theme.colors.primary} />
+          ) : engine.nudgeText ? (
+            <Text style={styles.nudgeText}>{engine.nudgeText}</Text>
+          ) : (
+            <Text style={styles.emptyEventText}>
+              Tap "Nudge Me" when you get stuck. The assistant will suggest your next line.
+            </Text>
+          )}
         </View>
 
         {engine.error ? <Text style={styles.errorText}>{engine.error}</Text> : null}
@@ -304,17 +329,6 @@ export const AiListeningEngineScreen = () => {
         ) : (
           <Text style={styles.emptyEventText}>Hashtags will be generated from the live transcript.</Text>
         )}
-
-        <Text style={styles.sectionTitle}>NUDGE</Text>
-        <View style={styles.nudgePanel}>
-          {engine.nudgeText ? (
-            <Text style={styles.nudgeText}>{engine.nudgeText}</Text>
-          ) : (
-            <Text style={styles.emptyEventText}>
-              Tap "Nudge Me" when you get stuck. The assistant will suggest your next line.
-            </Text>
-          )}
-        </View>
 
         <Text style={styles.sectionTitle}>CLIENT EVENTS</Text>
         <View style={styles.eventPanel}>
