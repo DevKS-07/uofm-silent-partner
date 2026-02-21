@@ -22,6 +22,7 @@ const toClientEventType = (value?: string): AiEventType => {
   switch (value) {
     case 'response.output_text.delta':
     case 'conversation.item.created':
+    case 'conversation.item.input_audio_transcription.completed':
     case 'input_audio_buffer.speech_started':
     case 'input_audio_buffer.speech_stopped':
       return value;
@@ -93,10 +94,12 @@ export const startAiRealtimeSession = async (
       type: 'session.update',
       session: {
         type: 'realtime',
+        instructions:
+          'You are a silent social coach. Do not proactively respond. Listen continuously. Only produce output when the client explicitly sends response.create asking for a nudge.',
         output_modalities: ['text'],
         audio: {
           input: {
-            turn_detection: { type: 'server_vad' },
+            turn_detection: { type: 'server_vad', create_response: false },
           },
         },
       },
@@ -130,6 +133,17 @@ export const startAiRealtimeSession = async (
           callbacks.onConversationItem?.(conversationText);
         }
         callbacks.onClientEvent?.('conversation.item.created', conversationText || 'Conversation item created.');
+      }
+
+      if (payload.type === 'conversation.item.input_audio_transcription.completed') {
+        const transcriptText = payload.text ?? pickConversationText(payload);
+        if (transcriptText) {
+          callbacks.onInputTranscription?.(transcriptText);
+        }
+        callbacks.onClientEvent?.(
+          'conversation.item.input_audio_transcription.completed',
+          transcriptText || 'Input transcription completed.',
+        );
       }
 
       if (
@@ -189,5 +203,23 @@ export const startAiRealtimeSession = async (
 
   return {
     stop: safeStop,
+    nudge: () => {
+      try {
+        const createResponse = {
+          type: 'response.create',
+          response: {
+            output_modalities: ['text'],
+            instructions:
+              'Give exactly one short line I can say next in this conversation. Keep it natural, specific, and under 18 words.',
+          },
+        };
+        dataChannelAny.send(JSON.stringify(createResponse));
+        emit('system', 'Nudge requested.');
+      } catch (error) {
+        callbacks.onError?.(
+          error instanceof Error ? error : new Error('Failed to request a nudge response.'),
+        );
+      }
+    },
   };
 };

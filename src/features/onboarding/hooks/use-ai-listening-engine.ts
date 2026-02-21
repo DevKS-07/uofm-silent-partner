@@ -30,6 +30,7 @@ export const useAiListeningEngine = () => {
   const [events, setEvents] = useState<AiClientEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [liveTranscript, setLiveTranscript] = useState('');
+  const [nudgeText, setNudgeText] = useState('');
   const [hashtags, setHashtags] = useState<string[]>([]);
   const sessionRef = useRef<AiRealtimeSessionHandle | null>(null);
 
@@ -50,6 +51,7 @@ export const useAiListeningEngine = () => {
     setConnectionState('connecting');
     setCompletedSteps({ stop: false });
     setLiveTranscript('');
+    setNudgeText('');
     setHashtags([]);
     setEvents([makeEvent('system', 'Starting AI listening engine...')]);
 
@@ -68,11 +70,17 @@ export const useAiListeningEngine = () => {
         },
         onTextDelta: (delta) => {
           setCompletedSteps((prev) => ({ ...prev, event: true }));
-          appendTranscript(delta);
+          setNudgeText((prev) => `${prev}${delta}`);
+        },
+        onInputTranscription: (heardText) => {
+          appendTranscript(heardText);
         },
         onConversationItem: (text) => {
           setCompletedSteps((prev) => ({ ...prev, event: true }));
-          appendTranscript(text);
+          setNudgeText((prev) => {
+            if (!text) return prev;
+            return prev ? `${prev}\n${text}` : text;
+          });
         },
         onClientEvent: (type, message) => {
           setEvents((prev) => [makeEvent(type, message), ...prev].slice(0, 24));
@@ -110,6 +118,11 @@ export const useAiListeningEngine = () => {
     })();
   }, [connectionState]);
 
+  const nudge = useCallback(() => {
+    setNudgeText('');
+    sessionRef.current?.nudge();
+  }, []);
+
   const statusText = useMemo(() => {
     switch (connectionState) {
       case 'idle':
@@ -144,9 +157,11 @@ export const useAiListeningEngine = () => {
     events,
     error,
     liveTranscript,
+    nudgeText,
     hashtags,
     statusText,
     start,
     stop,
+    nudge,
   };
 };

@@ -95,6 +95,9 @@ export const AiListeningEngineScreen = () => {
       gap: 10,
       marginBottom: 12,
     },
+    singleActionRow: {
+      marginBottom: 12,
+    },
     button: {
       flex: 1,
       height: 50,
@@ -212,6 +215,22 @@ export const AiListeningEngineScreen = () => {
       fontSize: 12,
       fontWeight: '700',
     },
+    nudgePanel: {
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+      borderRadius: 12,
+      backgroundColor: '#EEFBF7',
+      padding: 12,
+      minHeight: 72,
+      marginBottom: 12,
+    },
+    nudgeText: {
+      color: theme.colors.primaryDark,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '600',
+    },
   });
 
   return (
@@ -239,6 +258,15 @@ export const AiListeningEngineScreen = () => {
             onPress={engine.stop}
           >
             <Text style={styles.buttonTextDark}>Stop</Text>
+          </Pressable>
+        </View>
+        <View style={styles.singleActionRow}>
+          <Pressable
+            style={[styles.button, styles.primaryButton, !isRunning ? styles.buttonDisabled : null]}
+            disabled={!isRunning}
+            onPress={engine.nudge}
+          >
+            <Text style={styles.buttonText}>Nudge Me</Text>
           </Pressable>
         </View>
 
@@ -276,6 +304,17 @@ export const AiListeningEngineScreen = () => {
         ) : (
           <Text style={styles.emptyEventText}>Hashtags will be generated from the live transcript.</Text>
         )}
+
+        <Text style={styles.sectionTitle}>NUDGE</Text>
+        <View style={styles.nudgePanel}>
+          {engine.nudgeText ? (
+            <Text style={styles.nudgeText}>{engine.nudgeText}</Text>
+          ) : (
+            <Text style={styles.emptyEventText}>
+              Tap "Nudge Me" when you get stuck. The assistant will suggest your next line.
+            </Text>
+          )}
+        </View>
 
         <Text style={styles.sectionTitle}>CLIENT EVENTS</Text>
         <View style={styles.eventPanel}>

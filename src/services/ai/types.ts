@@ -12,6 +12,7 @@ export type AiEventType =
   | 'webrtc'
   | 'response.output_text.delta'
   | 'conversation.item.created'
+  | 'conversation.item.input_audio_transcription.completed'
   | 'input_audio_buffer.speech_started'
   | 'input_audio_buffer.speech_stopped'
   | 'error';
@@ -35,6 +36,7 @@ export type AiRealtimeCallbacks = {
   onStopped?: () => void;
   onSpeechObserved?: (eventType: 'input_audio_buffer.speech_started' | 'input_audio_buffer.speech_stopped') => void;
   onTextDelta?: (delta: string) => void;
+  onInputTranscription?: (text: string) => void;
   onConversationItem?: (text: string) => void;
   onClientEvent?: (type: AiEventType, message: string) => void;
   onError?: (error: Error) => void;
@@ -42,4 +44,5 @@ export type AiRealtimeCallbacks = {
 
 export type AiRealtimeSessionHandle = {
   stop: () => Promise<void>;
+  nudge: () => void;
 };
