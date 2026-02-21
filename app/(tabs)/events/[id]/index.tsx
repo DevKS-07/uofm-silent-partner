@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -8,13 +10,97 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ALL_EVENTS } from "../../../../src/data/events";
+import { ALL_EVENTS, type AppEvent } from "../../../../src/data/events";
+import { getEventById, registerUserForEvent } from "../../../../src/services/events";
+import { docRef } from "../../../../src/services/firebase/firestore";
 import { colors as COLORS } from "../../../../src/theme/tokens";
+import { useAuth } from "../../../../src/providers/auth-provider";
 
 export default function EventDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const event = ALL_EVENTS.find((e) => e.id === id);
+  const { user } = useAuth();
+  const [event, setEvent] = useState<AppEvent | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadEvent = async () => {
+      if (!id) {
+        if (isActive) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const firestoreEvent = await getEventById(id);
+        if (isActive) {
+          setEvent(firestoreEvent ?? ALL_EVENTS.find((item) => item.id === id) ?? null);
+        }
+      } catch {
+        if (isActive) {
+          setEvent(ALL_EVENTS.find((item) => item.id === id) ?? null);
+        }
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadEvent();
+
+    return () => {
+      isActive = false;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!user?.uid || !id) {
+      setIsRegistered(false);
+      return;
+    }
+
+    const unsubscribe = docRef<{ registeredEvents?: unknown[] }>(`users/${user.uid}`).onSnapshot(
+      (snapshot) => {
+        const data = snapshot.data();
+        const registeredEvents = data?.registeredEvents;
+        if (!Array.isArray(registeredEvents)) {
+          setIsRegistered(false);
+          return;
+        }
+
+        const registered = registeredEvents.some((item) => {
+          if (!item || typeof item !== "object") {
+            return false;
+          }
+          const eventId = (item as { id?: unknown }).id;
+          return typeof eventId === "string" && eventId === id;
+        });
+        setIsRegistered(registered);
+      },
+      () => {
+        setIsRegistered(false);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [id, user?.uid]);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!event) {
     return (
@@ -29,6 +115,37 @@ export default function EventDetailScreen() {
       </SafeAreaView>
     );
   }
+
+  const handleAttendEvent = async () => {
+    if (isRegistered) {
+      router.push({
+        pathname: "/events/[id]/start-networking",
+        params: { id },
+      });
+      return;
+    }
+
+    if (!user?.uid) {
+      setRegisterError("Session expired. Please sign in again.");
+      return;
+    }
+
+    setRegisterError(null);
+    setIsRegistering(true);
+    try {
+      await registerUserForEvent(user.uid, event);
+      setIsRegistered(true);
+      router.push({
+        pathname: "/events/[id]/start-networking",
+        params: { id },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not register for this event.";
+      setRegisterError(message);
+    } finally {
+      setIsRegistering(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -142,23 +259,26 @@ export default function EventDetailScreen() {
 
       {/* Attend CTA */}
       <View style={styles.footer}>
+        {registerError ? <Text style={styles.registerErrorText}>{registerError}</Text> : null}
         <TouchableOpacity
           style={styles.ctaButton}
           activeOpacity={0.85}
-          onPress={() =>
-            router.push({
-              pathname: "/events/[id]/start-networking",
-              params: { id },
-            })
-          }
+          onPress={() => void handleAttendEvent()}
+          disabled={isRegistering}
         >
-          <Ionicons
-            name="checkmark-circle"
-            size={20}
-            color={COLORS.white}
-            style={{ marginRight: 8 }}
-          />
-          <Text style={styles.ctaText}>Attend this event</Text>
+          {isRegistering ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Ionicons
+              name={isRegistered ? "checkmark-done-circle" : "checkmark-circle"}
+              size={20}
+              color={COLORS.white}
+              style={{ marginRight: 8 }}
+            />
+          )}
+          <Text style={styles.ctaText}>
+            {isRegistering ? "Registering..." : isRegistered ? "Registered" : "Attend this event"}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -194,6 +314,7 @@ export default function EventDetailScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.white },
+  loadingState: { flex: 1, alignItems: "center", justifyContent: "center" },
 
   notFound: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   notFoundText: { fontSize: 17, color: COLORS.mediumGray },
@@ -372,6 +493,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderRadius: 14,
     height: 56,
+  },
+  registerErrorText: {
+    color: "#A11A1A",
+    fontSize: 13,
+    marginBottom: 10,
   },
   ctaText: { fontSize: 16, fontWeight: "700", color: COLORS.white },
 

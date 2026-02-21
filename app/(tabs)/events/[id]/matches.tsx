@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,55 +10,72 @@ import {
   Dimensions,
   TouchableOpacity,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
-import Animated, {
-  FadeIn,
-  FadeOut,
-  SlideInUp,
-  SlideOutDown,
-} from "react-native-reanimated";
+import Animated, { FadeIn, SlideInUp, SlideOutDown } from "react-native-reanimated";
 
+import { useAuth } from "../../../../src/providers/auth-provider";
+import { docRef } from "../../../../src/services/firebase/firestore";
+import {
+  MATCH_SEED_ATTENDEES,
+  rankSeedAttendees,
+  type MatchResult,
+} from "../../../../src/features/networking";
 import { useTheme } from "../../../../src/providers/theme-provider";
 
 const { height } = Dimensions.get("window");
 
-const matches = [
-  {
-    id: 1,
-    name: "Sarah Chen",
-    role: "Senior Product Manager at Google",
-    image:
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=400&q=80",
-    score: 98,
-    summary: "Perfect match for your SaaS scaling questions.",
-    reasons: [
-      "Both interested in AI-driven Growth",
-      "She's looking for technical co-founders",
-      "Shared background in FinTech",
-      "Attended the same 'Future of Tech' talk",
-    ],
-  },
-  {
-    id: 2,
-    name: "David Miller",
-    role: "VC Partner at Sequoia",
-    image:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
-    score: 94,
-    summary: "Active investor in your sector.",
-    reasons: [
-      "Currently funding Seed stage AI startups",
-      "Expert in B2B Marketplaces",
-      "Your profile matches his investment thesis",
-    ],
-  },
-];
-
-export default function MatchesScreen({ id }: { id: string }) {
+export default function MatchesScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const [selected, setSelected] = useState<(typeof matches)[0] | null>(null);
+  const { user } = useAuth();
+  const { id } = useLocalSearchParams<{ id: string }>();
+
+  const [matches, setMatches] = useState<MatchResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<MatchResult | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadMatches = async () => {
+      if (!user?.uid) {
+        if (isActive) {
+          setLoadError("Session expired. Please sign in again.");
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      setLoadError(null);
+
+      try {
+        const snapshot = await docRef<Record<string, unknown>>(`users/${user.uid}`).get();
+        const userProfile = (snapshot.data() ?? {}) as Record<string, unknown>;
+        const ranked = rankSeedAttendees(userProfile, MATCH_SEED_ATTENDEES);
+
+        if (isActive) {
+          setMatches(ranked);
+        }
+      } catch {
+        if (isActive) {
+          setLoadError("Couldn't compute matches right now.");
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadMatches();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user?.uid]);
 
   const styles = StyleSheet.create({
     container: {
@@ -79,6 +96,11 @@ export default function MatchesScreen({ id }: { id: string }) {
       color: theme.colors.textPrimary,
       fontWeight: "700",
       fontSize: 18,
+    },
+    helperText: {
+      color: theme.colors.textSecondary,
+      fontSize: 14,
+      marginTop: 8,
     },
     card: {
       flexDirection: "row",
@@ -202,6 +224,47 @@ export default function MatchesScreen({ id }: { id: string }) {
       fontWeight: "700",
       textTransform: "uppercase",
     },
+    breakdownWrap: {
+      marginTop: theme.spacing.lg,
+      marginBottom: theme.spacing.md,
+    },
+    breakdownGrid: {
+      gap: theme.spacing.sm,
+    },
+    breakdownRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.surface,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+    },
+    breakdownLabel: {
+      color: theme.colors.textSecondary,
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    breakdownValue: {
+      color: theme.colors.textPrimary,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    breakdownTotalRow: {
+      marginTop: 4,
+      borderColor: theme.colors.primary,
+      backgroundColor: "#F0FBF8",
+    },
+    breakdownTotalLabel: {
+      color: theme.colors.primary,
+      fontWeight: "700",
+    },
+    breakdownTotalValue: {
+      color: theme.colors.primary,
+      fontWeight: "800",
+    },
     reasonItem: {
       flexDirection: "row",
       alignItems: "flex-start",
@@ -257,22 +320,14 @@ export default function MatchesScreen({ id }: { id: string }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.push(`/events/${id}/start-networking`)}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={26}
-            color={theme.colors.textSecondary}
-          />
+        <Pressable onPress={() => router.push(`/events/${id}/start-networking`)}>
+          <Ionicons name="chevron-back" size={26} color={theme.colors.textSecondary} />
         </Pressable>
         <Text style={styles.headerTitle}>Top Matches</Text>
         <View style={{ width: 26 }} />
       </View>
 
-      {/* List */}
       <ScrollView
         contentContainerStyle={{
           padding: theme.spacing.lg,
@@ -280,130 +335,138 @@ export default function MatchesScreen({ id }: { id: string }) {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {matches.map((match, index) => (
-          <Animated.View key={match.id} entering={FadeIn.delay(index * 100)}>
-            <Pressable style={styles.card} onPress={() => setSelected(match)}>
-              <Image source={{ uri: match.image }} style={styles.avatar} />
+        {loading ? <Text style={styles.helperText}>Calculating matches...</Text> : null}
+        {!loading && loadError ? <Text style={styles.helperText}>{loadError}</Text> : null}
+        {!loading && !loadError && matches.length === 0 ? (
+          <Text style={styles.helperText}>No matches found yet.</Text>
+        ) : null}
 
-              <View style={{ flex: 1 }}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.name}>{match.name}</Text>
+        {!loading && !loadError
+          ? matches.map((match, index) => (
+              <Animated.View key={match.attendee.id} entering={FadeIn.delay(index * 100)}>
+                <Pressable style={styles.card} onPress={() => setSelected(match)}>
+                  <Image source={{ uri: match.attendee.image }} style={styles.avatar} />
 
-                  <View style={styles.scoreBadge}>
-                    <Ionicons
-                      name="star"
-                      size={12}
-                      color={theme.colors.primary}
-                    />
-                    <Text style={styles.scoreText}>{match.score}%</Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.name}>{match.attendee.linkedIn.name}</Text>
+
+                      <View style={styles.scoreBadge}>
+                        <Ionicons name="star" size={12} color={theme.colors.primary} />
+                        <Text style={styles.scoreText}>{match.score}%</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.role}>{match.attendee.linkedIn.headline}</Text>
+                    <Text style={styles.summary} numberOfLines={2}>
+                      {match.summary}
+                    </Text>
                   </View>
-                </View>
-
-                <Text style={styles.role}>{match.role}</Text>
-                <Text style={styles.summary} numberOfLines={2}>
-                  {match.summary}
-                </Text>
-              </View>
-            </Pressable>
-          </Animated.View>
-        ))}
+                </Pressable>
+              </Animated.View>
+            ))
+          : null}
       </ScrollView>
 
-      {/* Modal */}
       <Modal visible={!!selected} transparent animationType="fade">
         {selected && (
           <View style={styles.modalOverlay}>
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              onPress={() => setSelected(null)}
-            />
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelected(null)} />
 
-            <Animated.View
-              entering={SlideInUp.springify()}
-              exiting={SlideOutDown}
-              style={styles.modalCard}
-            >
-              {/* Close */}
-              <Pressable
-                style={styles.closeBtn}
-                onPress={() => setSelected(null)}
-              >
+            <Animated.View entering={SlideInUp.springify()} exiting={SlideOutDown} style={styles.modalCard}>
+              <Pressable style={styles.closeBtn} onPress={() => setSelected(null)}>
                 <Ionicons name="close" size={22} color={theme.colors.white} />
               </Pressable>
 
-              {/* Hero Image */}
-              <Image
-                source={{ uri: selected.image }}
-                style={styles.heroImage}
-              />
+              <Image source={{ uri: selected.attendee.image }} style={styles.heroImage} />
 
-              <ScrollView style={{ padding: theme.spacing.lg }}>
+              <ScrollView
+                contentContainerStyle={{
+                  padding: theme.spacing.lg,
+                  paddingBottom: theme.spacing.xxl,
+                }}
+                showsVerticalScrollIndicator={false}
+              >
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalName}>{selected.name}</Text>
+                  <Text style={styles.modalName}>{selected.attendee.linkedIn.name}</Text>
                   <View style={styles.modalScore}>
-                    <Ionicons
-                      name="star"
-                      size={14}
-                      color={theme.colors.primary}
-                    />
-                    <Text
-                      style={{
-                        color: theme.colors.textPrimary,
-                        fontWeight: "700",
-                      }}
-                    >
+                    <Ionicons name="star" size={14} color={theme.colors.primary} />
+                    <Text style={{ color: theme.colors.textPrimary, fontWeight: "700" }}>
                       {selected.score}% Match
                     </Text>
                   </View>
                 </View>
 
                 <View style={styles.roleRow}>
-                  <MaterialIcons
-                    name="work"
-                    size={16}
-                    color={theme.colors.textSecondary}
-                  />
-                  <Text style={styles.modalRole}>{selected.role}</Text>
+                  <MaterialIcons name="work" size={16} color={theme.colors.textSecondary} />
+                  <Text style={styles.modalRole}>{selected.attendee.linkedIn.headline}</Text>
                 </View>
 
                 <Text style={styles.modalSummary}>"{selected.summary}"</Text>
 
+                <View style={styles.breakdownWrap}>
+                  <View style={styles.sectionHeader}>
+                    <Feather name="bar-chart-2" size={16} color={theme.colors.primary} />
+                    <Text style={styles.sectionTitle}>Score Breakdown</Text>
+                  </View>
+
+                  <View style={styles.breakdownGrid}>
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Primary Goal (35%)</Text>
+                      <Text style={styles.breakdownValue}>
+                        {selected.breakdown.primaryGoal.toFixed(1)} / 35
+                      </Text>
+                    </View>
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Topics (25%)</Text>
+                      <Text style={styles.breakdownValue}>
+                        {selected.breakdown.topics.toFixed(1)} / 25
+                      </Text>
+                    </View>
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Personality Traits (20%)</Text>
+                      <Text style={styles.breakdownValue}>
+                        {selected.breakdown.personalityTraits.toFixed(1)} / 20
+                      </Text>
+                    </View>
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Conversation Style (15%)</Text>
+                      <Text style={styles.breakdownValue}>
+                        {selected.breakdown.conversationStyle.toFixed(1)} / 15
+                      </Text>
+                    </View>
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>LinkedIn Data (5%)</Text>
+                      <Text style={styles.breakdownValue}>
+                        {selected.breakdown.linkedIn.toFixed(1)} / 5
+                      </Text>
+                    </View>
+                    <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
+                      <Text style={[styles.breakdownLabel, styles.breakdownTotalLabel]}>Total</Text>
+                      <Text style={[styles.breakdownValue, styles.breakdownTotalValue]}>
+                        {selected.breakdown.total.toFixed(1)} / 100
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
                 <View style={{ marginTop: theme.spacing.lg }}>
                   <View style={styles.sectionHeader}>
-                    <Feather
-                      name="zap"
-                      size={16}
-                      color={theme.colors.primary}
-                    />
+                    <Feather name="zap" size={16} color={theme.colors.primary} />
                     <Text style={styles.sectionTitle}>Why This Match</Text>
                   </View>
 
                   {selected.reasons.map((reason, i) => (
-                    <Animated.View
-                      key={i}
-                      entering={FadeIn.delay(150 + i * 100)}
-                      style={styles.reasonItem}
-                    >
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={18}
-                        color={theme.colors.success}
-                      />
+                    <Animated.View key={i} entering={FadeIn.delay(150 + i * 100)} style={styles.reasonItem}>
+                      <Ionicons name="checkmark-circle" size={18} color={theme.colors.success} />
                       <Text style={styles.reasonText}>{reason}</Text>
                     </Animated.View>
                   ))}
                 </View>
 
-                <Pressable
-                  style={styles.cta}
-                  onPress={() => router.push(`/icebreaker/${selected.id}`)}
-                >
-                  <Ionicons
-                    name="chatbubble-outline"
-                    size={20}
-                    color={theme.colors.white}
-                  />
-                  <Text style={styles.ctaText}>Break the Ice ❄️</Text>
+                <Pressable style={styles.cta} onPress={() => router.push(`/icebreaker/${selected.attendee.id}`)}>
+                  <Ionicons name="chatbubble-outline" size={20} color={theme.colors.white} />
+                  <Text style={styles.ctaText}>Break the Ice</Text>
                 </Pressable>
               </ScrollView>
             </Animated.View>
@@ -411,12 +474,8 @@ export default function MatchesScreen({ id }: { id: string }) {
         )}
       </Modal>
 
-      {/* Bottom Nav */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push("/(tabs)/dashboard")}
-        >
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push("/(tabs)/dashboard")}>
           <Ionicons name="home-outline" size={24} color={theme.colors.textSecondary} />
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
@@ -426,10 +485,7 @@ export default function MatchesScreen({ id }: { id: string }) {
           <Text style={styles.navTextActive}>Matches</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push("/(tabs)/profile")}
-        >
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push("/(tabs)/profile")}>
           <Ionicons name="person-outline" size={24} color={theme.colors.textSecondary} />
           <Text style={styles.navText}>Profile</Text>
         </TouchableOpacity>

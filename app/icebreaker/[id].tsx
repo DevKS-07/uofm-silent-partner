@@ -1,8 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,9 +10,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "../../src/providers/theme-provider";
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
+import { useTheme } from "../../src/providers/theme-provider";
+import { useAuth } from "../../src/providers/auth-provider";
+import { MATCH_SEED_ATTENDEES } from "../../src/features/networking";
+import { generateIcebreakerPack } from "../../src/services/ai";
+import { docRef } from "../../src/services/firebase/firestore";
 
 type SuggestionType = "primary" | "followup" | "fallback";
 
@@ -25,124 +26,153 @@ type Suggestion = {
   icon: keyof typeof Ionicons.glyphMap;
 };
 
+type RescueLine = {
+  title: string;
+  text: string;
+};
+
 type IcebreakerData = {
   name: string;
   role: string;
   suggestions: Suggestion[];
+  rescueLines: RescueLine[];
 };
 
-const ICEBREAKERS: Record<string, IcebreakerData> = {
-  "1": {
-    name: "Sarah Chen",
-    role: "Senior Product Manager at Google",
-    suggestions: [
-      {
-        type: "primary",
-        label: "Primary Opening Line",
-        text: "I saw you're interested in AI-driven Growth. How do you see LLMs changing product discovery in the next year?",
-        icon: "flash-outline",
-      },
-      {
-        type: "followup",
-        label: "Follow-Up Line",
-        text: "Your background in FinTech is fascinating. Did you find the transition to general product management challenging?",
-        icon: "chatbubble-outline",
-      },
-      {
-        type: "fallback",
-        label: "Safe Fallback Line",
-        text: "Hi Sarah, I'm also attending the 'Future of Tech' talk later. Are you looking forward to any specific speakers?",
-        icon: "shield-checkmark-outline",
-      },
-    ],
-  },
-  "2": {
-    name: "David Miller",
-    role: "VC Partner at Sequoia",
-    suggestions: [
-      {
-        type: "primary",
-        label: "Primary Opening Line",
-        text: "I noticed you're investing in Seed-stage AI startups. What metrics matter most to you beyond the team at that stage?",
-        icon: "flash-outline",
-      },
-      {
-        type: "followup",
-        label: "Follow-Up Line",
-        text: "Your B2B marketplace thesis is compelling. Are you seeing more founder-led sales or PLG approaches winning right now?",
-        icon: "chatbubble-outline",
-      },
-      {
-        type: "fallback",
-        label: "Safe Fallback Line",
-        text: "Hi David, great to be at the same conference. Are you joining any of the fireside chats this afternoon?",
-        icon: "shield-checkmark-outline",
-      },
-    ],
-  },
-};
-
-const FALLBACK_DATA: IcebreakerData = {
+const DEFAULT_DATA: IcebreakerData = {
   name: "New Connection",
   role: "Tech Professional",
   suggestions: [
     {
       type: "primary",
       label: "Primary Opening Line",
-      text: "I noticed we share a passion for scalable architecture. What's the most interesting challenge you've tackled recently?",
+      text: "What are you most excited to explore at this event today?",
       icon: "flash-outline",
     },
     {
       type: "followup",
       label: "Follow-Up Line",
-      text: "It looks like we're both exploring the startup ecosystem here. What sector are you most excited about right now?",
+      text: "What kind of people are you hoping to meet here?",
       icon: "chatbubble-outline",
     },
     {
       type: "fallback",
       label: "Safe Fallback Line",
-      text: "Hi, I'm just getting settled in. Have you found any interesting sessions or booths so far?",
+      text: "Great to meet you. Which session has been your favorite so far?",
       icon: "shield-checkmark-outline",
+    },
+  ],
+  rescueLines: [
+    {
+      title: "Soft Pivot",
+      text: "By the way, have you discovered any interesting talks yet?",
+    },
+    {
+      title: "Curiosity Pivot",
+      text: "What trend in your space are you watching most closely this year?",
+    },
+    {
+      title: "Social Pivot",
+      text: "Are you joining any networking sessions later today?",
     },
   ],
 };
 
 const COACH_MESSAGES = [
-  "Nice 👏 That looked like a meaningful interaction.",
-  "Strong conversational energy detected.",
-  "Momentum unlocked 🚀 Keep going.",
+  "Nice. That sounded natural and confident.",
+  "Good momentum. Keep the exchange curious.",
+  "Strong opener. Follow with one specific question.",
 ];
-
-const RESCUE_LINES = [
-  {
-    title: "Soft Pivot",
-    text: "By the way, have you seen any other interesting talks today?",
-  },
-  {
-    title: "Curiosity Pivot",
-    text: "What's your take on the keynote speaker's point about AI?",
-  },
-  {
-    title: "Social Pivot",
-    text: "Are you planning to attend the networking mixer later?",
-  },
-];
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function IcebreakerScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const matchData = id && ICEBREAKERS[id] ? ICEBREAKERS[id] : FALLBACK_DATA;
-
-  const [showRescue, setShowRescue] = useState(false);
   const [coachMessage, setCoachMessage] = useState("");
   const [showCoach, setShowCoach] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState<IcebreakerData>(DEFAULT_DATA);
 
   const coachOpacity = useRef(new Animated.Value(0)).current;
   const coachTranslate = useRef(new Animated.Value(-16)).current;
+
+  useEffect(() => {
+    let isActive = true;
+
+    const load = async () => {
+      if (!id || !user?.uid) {
+        if (isActive) {
+          setData(DEFAULT_DATA);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      const attendee = MATCH_SEED_ATTENDEES.find((item) => item.id === id);
+      if (!attendee) {
+        if (isActive) {
+          setData(DEFAULT_DATA);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const snapshot = await docRef<Record<string, unknown>>(`users/${user.uid}`).get();
+        const generated = await generateIcebreakerPack({
+          userProfile: (snapshot.data() ?? {}) as Record<string, unknown>,
+          attendee,
+        });
+
+        if (isActive) {
+          setData({
+            name: attendee.linkedIn.name,
+            role: attendee.linkedIn.headline,
+            suggestions: [
+              {
+                type: "primary",
+                label: "Primary Opening Line",
+                text: generated.primaryLine,
+                icon: "flash-outline",
+              },
+              {
+                type: "followup",
+                label: "Follow-Up Line",
+                text: generated.followupLine,
+                icon: "chatbubble-outline",
+              },
+              {
+                type: "fallback",
+                label: "Safe Fallback Line",
+                text: generated.fallbackLine,
+                icon: "shield-checkmark-outline",
+              },
+            ],
+            rescueLines: generated.rescueLines,
+          });
+        }
+      } catch {
+        if (isActive) {
+          setData({
+            ...DEFAULT_DATA,
+            name: attendee.linkedIn.name,
+            role: attendee.linkedIn.headline,
+          });
+        }
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      isActive = false;
+    };
+  }, [id, user?.uid]);
 
   const handleSuggestionTap = () => {
     const msg = COACH_MESSAGES[Math.floor(Math.random() * COACH_MESSAGES.length)];
@@ -164,7 +194,7 @@ export default function IcebreakerScreen() {
           useNativeDriver: true,
         }),
       ]),
-      Animated.delay(2400),
+      Animated.delay(2200),
       Animated.parallel([
         Animated.timing(coachOpacity, {
           toValue: 0,
@@ -182,7 +212,6 @@ export default function IcebreakerScreen() {
 
   const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: theme.colors.background },
-
     header: {
       flexDirection: "row",
       alignItems: "center",
@@ -203,16 +232,13 @@ export default function IcebreakerScreen() {
       fontWeight: "700",
       color: theme.colors.textPrimary,
     },
-
     scroll: { flex: 1 },
     scrollContent: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.xxl,
       paddingBottom: 140,
     },
-
-    // Hero
-    hero: { alignItems: "center", marginBottom: 32 },
+    hero: { alignItems: "center", marginBottom: 28 },
     heroIconWrap: {
       width: 72,
       height: 72,
@@ -235,14 +261,15 @@ export default function IcebreakerScreen() {
       color: theme.colors.textSecondary,
       textAlign: "center",
       lineHeight: 21,
-      maxWidth: 280,
+      maxWidth: 300,
     },
-    heroMatchName: {
-      color: theme.colors.primary,
-      fontWeight: "600",
+    heroMatchName: { color: theme.colors.primary, fontWeight: "700" },
+    loadingText: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginBottom: theme.spacing.md,
+      textAlign: "center",
     },
-
-    // Suggestion cards
     card: {
       borderRadius: 16,
       padding: theme.spacing.lg,
@@ -291,8 +318,6 @@ export default function IcebreakerScreen() {
       color: theme.colors.textSecondary,
       marginTop: 8,
     },
-
-    // Refresh
     refreshBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -311,8 +336,6 @@ export default function IcebreakerScreen() {
       fontWeight: "600",
       color: theme.colors.textSecondary,
     },
-
-    // Rescue FAB
     rescueWrap: {
       position: "absolute",
       bottom: 24,
@@ -341,8 +364,6 @@ export default function IcebreakerScreen() {
       fontWeight: "700",
       color: theme.colors.textPrimary,
     },
-
-    // Rescue bottom sheet
     modalOverlay: {
       flex: 1,
       justifyContent: "flex-end",
@@ -416,8 +437,6 @@ export default function IcebreakerScreen() {
       fontWeight: "700",
       color: theme.colors.primary,
     },
-
-    // Coach toast
     coachToast: {
       position: "absolute",
       top: 80,
@@ -455,7 +474,6 @@ export default function IcebreakerScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
           <Ionicons name="arrow-back" size={22} color={theme.colors.textPrimary} />
@@ -464,30 +482,20 @@ export default function IcebreakerScreen() {
         <View style={styles.headerBtn} />
       </View>
 
-      {/* Content */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Hero */}
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <View style={styles.heroIconWrap}>
-            <Ionicons
-              name="chatbubbles-outline"
-              size={32}
-              color={theme.colors.primary}
-            />
+            <Ionicons name="chatbubbles-outline" size={32} color={theme.colors.primary} />
           </View>
-          <Text style={styles.heroTitle}>Break the Ice ❄️</Text>
+          <Text style={styles.heroTitle}>Break the Ice</Text>
           <Text style={styles.heroSubtitle}>
-            Natural ways to start a meaningful conversation with{" "}
-            <Text style={styles.heroMatchName}>{matchData.name}</Text>
+            Natural ways to start a meaningful conversation with <Text style={styles.heroMatchName}>{data.name}</Text>
           </Text>
         </View>
 
-        {/* Suggestion Cards */}
-        {matchData.suggestions.map((s, idx) => {
+        {isLoading ? <Text style={styles.loadingText}>Generating personalized suggestions...</Text> : null}
+
+        {data.suggestions.map((s, idx) => {
           const isPrimary = s.type === "primary";
           return (
             <TouchableOpacity
@@ -497,88 +505,34 @@ export default function IcebreakerScreen() {
               onPress={handleSuggestionTap}
             >
               <View style={styles.cardTop}>
-                <View
-                  style={[
-                    styles.cardIconWrap,
-                    isPrimary ? styles.primaryIconWrap : styles.secondaryIconWrap,
-                  ]}
-                >
-                  <Ionicons
-                    name={s.icon}
-                    size={16}
-                    color={isPrimary ? theme.colors.primary : theme.colors.textSecondary}
-                  />
+                <View style={[styles.cardIconWrap, isPrimary ? styles.primaryIconWrap : styles.secondaryIconWrap]}>
+                  <Ionicons name={s.icon} size={16} color={isPrimary ? theme.colors.primary : theme.colors.textSecondary} />
                 </View>
-                <Text
-                  style={[
-                    styles.cardLabel,
-                    isPrimary ? styles.primaryLabel : styles.secondaryLabel,
-                  ]}
-                >
-                  {s.label}
-                </Text>
+                <Text style={[styles.cardLabel, isPrimary ? styles.primaryLabel : styles.secondaryLabel]}>{s.label}</Text>
               </View>
-              <Text style={styles.cardText}>"{s.text}"</Text>
+              <Text style={styles.cardText}>{s.text}</Text>
               <Text style={styles.cardTapHint}>Tap to log this interaction</Text>
             </TouchableOpacity>
           );
         })}
 
-        {/* Generate Another */}
-        <TouchableOpacity style={styles.refreshBtn} activeOpacity={0.7}>
-          <Ionicons
-            name="refresh-outline"
-            size={16}
-            color={theme.colors.textSecondary}
-          />
+        <TouchableOpacity style={styles.refreshBtn} activeOpacity={0.7} onPress={() => router.replace(`/icebreaker/${id}`)}>
+          <Ionicons name="refresh-outline" size={16} color={theme.colors.textSecondary} />
           <Text style={styles.refreshText}>Generate Another Suggestion</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Conversation Rescue FAB */}
       <View style={styles.rescueWrap} pointerEvents="box-none">
         <TouchableOpacity
           style={styles.rescueBtn}
           activeOpacity={0.85}
-          onPress={() => setShowRescue(true)}
+          onPress={() => router.push("/ai-listening-engine")}
         >
           <Ionicons name="medkit-outline" size={20} color={theme.colors.primary} />
-          <Text style={styles.rescueBtnText}>Conversation Rescue 🚑</Text>
+          <Text style={styles.rescueBtnText}>Conversation Rescue</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Conversation Rescue Bottom Sheet */}
-      <Modal
-        visible={showRescue}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowRescue(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setShowRescue(false)}>
-          <Pressable onPress={() => {}}>
-            <View style={styles.sheet}>
-              <View style={styles.sheetHandle} />
-              <Text style={styles.sheetTitle}>Conversation Rescue 🚑</Text>
-              <Text style={styles.sheetSubtitle}>
-                If the conversation feels stuck, try one of these.
-              </Text>
-
-              {RESCUE_LINES.map((line, i) => (
-                <View key={i} style={styles.rescueLine}>
-                  <Text style={styles.rescueLineTitle}>{line.title}</Text>
-                  <Text style={styles.rescueLineText}>{line.text}</Text>
-                </View>
-              ))}
-
-              <TouchableOpacity style={styles.generateRescueBtn} activeOpacity={0.85}>
-                <Text style={styles.generateRescueBtnText}>Generate Rescue Line</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Confidence Coach Toast */}
       {showCoach && (
         <Animated.View
           pointerEvents="none"

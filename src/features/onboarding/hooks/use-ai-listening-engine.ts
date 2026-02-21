@@ -31,6 +31,7 @@ export const useAiListeningEngine = () => {
   const [error, setError] = useState<string | null>(null);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [nudgeText, setNudgeText] = useState('');
+  const [nudgeOptions, setNudgeOptions] = useState<string[]>([]);
   const [nudgeLoading, setNudgeLoading] = useState(false);
   const [hashtags, setHashtags] = useState<string[]>([]);
   const sessionRef = useRef<AiRealtimeSessionHandle | null>(null);
@@ -43,12 +44,21 @@ export const useAiListeningEngine = () => {
     setCompletedSteps((prev) => ({ ...prev, [step]: true }));
   }, []);
 
+  const parseNudgeOptions = useCallback((text: string): string[] => {
+    return text
+      .split('\n')
+      .map((line) => line.replace(/^\s*[-*]?\s*\d*[.)-]?\s*/, '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  }, []);
+
   const clearContextState = useCallback(() => {
     setCompletedSteps({});
     setEvents([]);
     setError(null);
     setLiveTranscript('');
     setNudgeText('');
+    setNudgeOptions([]);
     setNudgeLoading(false);
     setHashtags([]);
   }, []);
@@ -58,6 +68,7 @@ export const useAiListeningEngine = () => {
     setCompletedSteps({ stop: false });
     setLiveTranscript('');
     setNudgeText('');
+    setNudgeOptions([]);
     setNudgeLoading(false);
     setHashtags([]);
     setEvents([makeEvent('system', 'Starting AI listening engine...')]);
@@ -95,7 +106,11 @@ export const useAiListeningEngine = () => {
         onTextDelta: (delta) => {
           markStep('event');
           setNudgeLoading(false);
-          setNudgeText((prev) => `${prev}${delta}`);
+          setNudgeText((prev) => {
+            const next = `${prev}${delta}`;
+            setNudgeOptions(parseNudgeOptions(next));
+            return next;
+          });
         },
         onInputTranscription: (heardText) => {
           appendTranscript(heardText);
@@ -103,6 +118,7 @@ export const useAiListeningEngine = () => {
         onConversationItem: (text) => {
           markStep('event');
           setNudgeLoading(false);
+          setNudgeOptions(parseNudgeOptions(text));
           setNudgeText((prev) => {
             if (!text) return prev;
             return prev ? `${prev}\n${text}` : text;
@@ -129,7 +145,7 @@ export const useAiListeningEngine = () => {
       setNudgeLoading(false);
       appendEvent('error', message);
     }
-  }, [appendEvent, appendTranscript, clearRunState, connectionState, markStep]);
+  }, [appendEvent, appendTranscript, clearRunState, connectionState, markStep, parseNudgeOptions]);
 
   const stop = useCallback(() => {
     if (connectionState === 'idle' || connectionState === 'stopped') {
@@ -149,6 +165,7 @@ export const useAiListeningEngine = () => {
 
   const nudge = useCallback(() => {
     setNudgeText('');
+    setNudgeOptions([]);
     setNudgeLoading(true);
     sessionRef.current?.nudge();
   }, []);
@@ -197,6 +214,7 @@ export const useAiListeningEngine = () => {
     error,
     liveTranscript,
     nudgeText,
+    nudgeOptions,
     nudgeLoading,
     hashtags,
     statusText,

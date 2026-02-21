@@ -14,7 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../../providers/auth-provider";
 import { docRef } from "../../../services/firebase/firestore";
 import { colors as COLORS } from "../../../theme/tokens";
-import { ALL_EVENTS, type AppEvent } from "../../../data/events";
+import type { AppEvent } from "../../../data/events";
+import { getAllEvents, getPopularEvents } from "../../../services/events";
 
 const POPULAR_COUNT = 3;
 
@@ -71,6 +72,10 @@ const JoinEventScreen = () => {
   const [activeTab, setActiveTab] = useState<Tab>("events");
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [registeredEvents, setRegisteredEvents] = useState<AppEvent[]>([]);
+  const [popularEvents, setPopularEvents] = useState<AppEvent[]>([]);
+  const [allEvents, setAllEvents] = useState<AppEvent[]>([]);
+  const [isLoadingPopularEvents, setIsLoadingPopularEvents] = useState(true);
+  const [popularEventsError, setPopularEventsError] = useState<string | null>(null);
 
   const headerAnim = useSlideIn(0);
   const searchAnim = useSlideIn(120);
@@ -78,19 +83,62 @@ const JoinEventScreen = () => {
   const eventsLabelAnim = useSlideIn(320);
 
   useEffect(() => {
-    if (!user) return;
-    docRef<Record<string, any>>(`users/${user.uid}`)
-      .get()
-      .then((snap) => {
-        if (!snap.exists) return;
+    if (!user) {
+      setRegisteredEvents([]);
+      return;
+    }
+
+    const unsubscribe = docRef<Record<string, any>>(`users/${user.uid}`).onSnapshot(
+      (snap) => {
+        if (!snap.exists) {
+          setRegisteredEvents([]);
+          return;
+        }
+
         const data = snap.data();
-        setRegisteredEvents(data?.registeredEvents ?? []);
-      });
+        setRegisteredEvents(Array.isArray(data?.registeredEvents) ? data.registeredEvents : []);
+      },
+      () => {
+        setRegisteredEvents([]);
+      },
+    );
+
+    return () => unsubscribe();
   }, [user]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadPopularEvents = async () => {
+      setIsLoadingPopularEvents(true);
+      setPopularEventsError(null);
+      try {
+        const [popular, all] = await Promise.all([getPopularEvents(), getAllEvents()]);
+        if (isActive) {
+          setPopularEvents(popular);
+          setAllEvents(all);
+        }
+      } catch {
+        if (isActive) {
+          setPopularEventsError("Couldn't load popular events right now.");
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingPopularEvents(false);
+        }
+      }
+    };
+
+    void loadPopularEvents();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const displayedEvents = showAllEvents
-    ? ALL_EVENTS
-    : ALL_EVENTS.slice(0, POPULAR_COUNT);
+    ? allEvents
+    : popularEvents.slice(0, POPULAR_COUNT);
 
   // ─── Events tab ────────────────────────────────────────────────────────────
 
@@ -148,18 +196,26 @@ const JoinEventScreen = () => {
         </TouchableOpacity>
       </Animated.View>
 
-      {displayedEvents.map((event) => (
-        <EventCard
-          key={event.id}
-          event={event}
-          onPress={() =>
-            router.push({
-              pathname: '/events/[id]',
-              params: { id: event.id },
-            })
-          }
-        />
-      ))}
+      {isLoadingPopularEvents ? (
+        <Text style={styles.helperText}>Loading popular events...</Text>
+      ) : popularEventsError ? (
+        <Text style={styles.helperText}>{popularEventsError}</Text>
+      ) : displayedEvents.length === 0 ? (
+        <Text style={styles.helperText}>No popular events available yet.</Text>
+      ) : (
+        displayedEvents.map((event) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            onPress={() =>
+              router.push({
+                pathname: '/events/[id]',
+                params: { id: event.id },
+              })
+            }
+          />
+        ))
+      )}
     </ScrollView>
   );
 
@@ -235,6 +291,14 @@ const JoinEventScreen = () => {
             </TouchableOpacity>
           );
         })}
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => router.push("/(tabs)/communication-assist")}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="mic-outline" size={24} color={COLORS.mediumGray} />
+          <Text style={styles.tabLabel}>Assist</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => router.push("/(tabs)/profile")}
@@ -324,6 +388,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   seeAllText: { fontSize: 13, fontWeight: "600", color: COLORS.primary },
+  helperText: {
+    fontSize: 14,
+    color: COLORS.mediumGray,
+    marginTop: 8,
+    marginBottom: 12,
+  },
   eventCard: {
     flexDirection: "row",
     alignItems: "center",

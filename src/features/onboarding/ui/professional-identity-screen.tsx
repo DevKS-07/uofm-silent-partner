@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '../../../providers/auth-provider';
 import { useTheme } from '../../../providers/theme-provider';
+import { docRef } from '../../../services/firebase';
 import { type LinkedInConnectionSummary } from '../../../services/linkedin';
 import { useLinkedInConnect } from '../hooks/use-linkedin-connect';
 import { AnimatedOption } from './animated-option';
@@ -19,11 +21,37 @@ const ITEMS = [
 export const ProfessionalIdentityScreen = () => {
   const router = useRouter();
   const theme = useTheme();
+  const { user } = useAuth();
+  const [isCheckingConnection, setIsCheckingConnection] = useState(true);
   const [linkedInConnected, setLinkedInConnected] = useState(false);
   const [linkedInProfile, setLinkedInProfile] = useState<LinkedInConnectionSummary | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectNotice, setConnectNotice] = useState<string | null>(null);
   const linkedIn = useLinkedInConnect();
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setIsCheckingConnection(false);
+      return;
+    }
+
+    const unsubscribe = docRef<{ isConnected?: boolean }>(`users/${user.uid}`).onSnapshot(
+      (snapshot) => {
+        const data = snapshot.data();
+        if (data?.isConnected === true) {
+          router.replace('/(tabs)/dashboard');
+          return;
+        }
+
+        setIsCheckingConnection(false);
+      },
+      () => {
+        setIsCheckingConnection(false);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [router, user?.uid]);
 
   const handleLinkedInConnect = async () => {
     setConnectNotice(null);
@@ -217,6 +245,16 @@ export const ProfessionalIdentityScreen = () => {
       fontSize: 13,
     },
   });
+
+  if (isCheckingConnection) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={[styles.container, { justifyContent: 'center' }]}>
+          <ActivityIndicator size="small" color={theme.colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>

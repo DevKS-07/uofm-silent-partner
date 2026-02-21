@@ -29,9 +29,10 @@ const SILENT_COACH_SESSION_INSTRUCTIONS =
   'Only produce output when the client explicitly sends response.create asking for a nudge.';
 
 const NUDGE_RESPONSE_INSTRUCTIONS =
-  'English only. You are writing a line for the device owner (me) to say next, never for the other speaker. ' +
+  'English only. You are writing lines for the device owner (me) to say next, never for the other speaker. ' +
   'If speaker identity is uncertain, still default to writing my next line only. ' +
-  'Output exactly one short spoken line that I should say next, in first person voice, under 18 words. ' +
+  'Output exactly three short spoken options I could say next, each under 18 words. ' +
+  'Return plain text with each option on a new line only, no numbering, no bullets, no labels. ' +
   'Prefer a natural sentence that can start with I, That, Sounds, or Thanks. ' +
   'Mirror the current tone of the conversation: if playful, be witty; if serious, be respectful and grounded. ' +
   'Use light humor only when context supports it, never forced. ' +

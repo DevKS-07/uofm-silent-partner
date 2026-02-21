@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,11 +12,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 
 import { useTheme } from "../../../../src/providers/theme-provider";
+import { useAuth } from "../../../../src/providers/auth-provider";
+import { ALL_EVENTS, type AppEvent } from "../../../../src/data/events";
+import { getEventById } from "../../../../src/services/events";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
 const STEPS = [
-  { icon: "people-outline" as const,         label: "Scanning 12,547 attendee profiles..." },
+  { icon: "people-outline" as const,         label: "Scanning attendee profiles..." },
   { icon: "document-text-outline" as const,  label: "Analyzing your professional background..." },
   { icon: "heart-outline" as const,          label: "Detecting shared interests & goals..." },
   { icon: "chatbubbles-outline" as const,    label: "Mapping conversational chemistry..." },
@@ -30,11 +33,56 @@ const STEP_MS = 1100; // per step → 5 × 1100 = 5 500 ms total
 export default function StartNetworkingScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [event, setEvent] = useState<AppEvent | null>(null);
 
   const [isSearching, setIsSearching] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [showResult, setShowResult] = useState(false);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadEvent = async () => {
+      if (!id) {
+        return;
+      }
+
+      try {
+        const firestoreEvent = await getEventById(id);
+        if (isActive) {
+          setEvent(firestoreEvent ?? ALL_EVENTS.find((item) => item.id === id) ?? null);
+        }
+      } catch {
+        if (isActive) {
+          setEvent(ALL_EVENTS.find((item) => item.id === id) ?? null);
+        }
+      }
+    };
+
+    void loadEvent();
+
+    return () => {
+      isActive = false;
+    };
+  }, [id]);
+
+  const displayName = useMemo(() => {
+    const fromDisplayName = user?.displayName?.trim();
+    if (fromDisplayName) {
+      return fromDisplayName;
+    }
+
+    const email = user?.email?.trim() ?? "";
+    if (email.includes("@")) {
+      return email.split("@")[0];
+    }
+
+    return "Friend";
+  }, [user?.displayName, user?.email]);
+
+  const avatarInitial = displayName.charAt(0).toUpperCase() || "F";
 
   // 3 expanding rings
   const ring1Scale   = useRef(new Animated.Value(1)).current;
@@ -160,7 +208,16 @@ export default function StartNetworkingScreen() {
       marginBottom: theme.spacing.lg,
     },
     profileRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
-    avatar:     { width: 40, height: 40, borderRadius: 20 },
+    avatar:     { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.colors.lightGray },
+    avatarFallback: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.primary,
+    },
+    avatarFallbackText: { color: theme.colors.white, fontWeight: "700", fontSize: 15 },
     welcome:    { fontSize: 12, color: theme.colors.textSecondary },
     name:       { fontSize: 14, fontWeight: "bold", color: theme.colors.textPrimary },
     menuBtn:    { padding: theme.spacing.sm, backgroundColor: theme.colors.gray, borderRadius: 20 },
@@ -304,13 +361,16 @@ export default function StartNetworkingScreen() {
       {/* Top bar */}
       <View style={styles.header}>
         <View style={styles.profileRow}>
-          <Image
-            source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80" }}
-            style={styles.avatar}
-          />
+          {user?.photoURL ? (
+            <Image source={{ uri: user.photoURL }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarFallbackText}>{avatarInitial}</Text>
+            </View>
+          )}
           <View>
             <Text style={styles.welcome}>Welcome,</Text>
-            <Text style={styles.name}>Alex Johnson</Text>
+            <Text style={styles.name}>{displayName}</Text>
           </View>
         </View>
         <TouchableOpacity style={styles.menuBtn}>
@@ -320,13 +380,13 @@ export default function StartNetworkingScreen() {
 
       {/* Event card */}
       <View style={styles.card}>
-        <Text style={styles.badge}>Live Event</Text>
-        <Text style={styles.cardTitle}>TechCrunch Disrupt 2026</Text>
-        <Text style={styles.cardSub}>Moscone Center • 12.5k Attendees</Text>
+        <Text style={styles.badge}>{event?.category || "Live Event"}</Text>
+        <Text style={styles.cardTitle}>{event?.name || "Selected Event"}</Text>
+        <Text style={styles.cardSub}>{(event?.venue || "Venue TBD") + " � " + (event?.attendeeCount || "TBD") + " Attendees"}</Text>
         <View style={styles.progressBar}>
           <View style={styles.progressFill} />
         </View>
-        <Text style={styles.progressText}>Day 2 of 3</Text>
+        <Text style={styles.progressText}>{event?.date || "Event details loading..."}</Text>
       </View>
 
       {/* Center area */}
@@ -455,3 +515,4 @@ export default function StartNetworkingScreen() {
     </View>
   );
 }
+

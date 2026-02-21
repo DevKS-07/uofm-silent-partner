@@ -12,35 +12,6 @@ type EngineStep = {
   description: string;
 };
 
-const FLOW_STEPS: EngineStep[] = [
-  {
-    id: 'connect',
-    label: 'Start Button',
-    description: 'Open a WebRTC connection to OpenAI.',
-  },
-  {
-    id: 'stream',
-    label: 'Streaming',
-    description: 'Your microphone sends audio chunks to OpenAI.',
-  },
-  {
-    id: 'observe',
-    label: 'Observation',
-    description: 'OpenAI VAD (Voice Activity Detection) hears speech.',
-  },
-  {
-    id: 'event',
-    label: 'The Event',
-    description:
-      'Listen for response.output_text.delta or conversation.item.created on the client.',
-  },
-  {
-    id: 'stop',
-    label: 'Stop Button',
-    description: 'Close the WebRTC peer connection.',
-  },
-];
-
 export const AiListeningEngineScreen = () => {
   const theme = useTheme();
   const engine = useAiListeningEngine();
@@ -185,41 +156,6 @@ export const AiListeningEngineScreen = () => {
       color: theme.colors.mediumGray,
       fontSize: 12,
     },
-    transcriptPanel: {
-      marginTop: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.borderColor,
-      borderRadius: 12,
-      backgroundColor: theme.colors.white,
-      padding: 12,
-      minHeight: 110,
-      marginBottom: 12,
-    },
-    transcriptText: {
-      color: theme.colors.darkGray,
-      fontSize: 13,
-      lineHeight: 20,
-    },
-    hashtagRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginTop: 8,
-      marginBottom: 16,
-    },
-    hashtagChip: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      backgroundColor: '#EEFBF7',
-      borderWidth: 1,
-      borderColor: theme.colors.primary,
-    },
-    hashtagText: {
-      color: theme.colors.primaryDark,
-      fontSize: 12,
-      fontWeight: '700',
-    },
     nudgePanel: {
       marginTop: 8,
       borderWidth: 1,
@@ -236,13 +172,30 @@ export const AiListeningEngineScreen = () => {
       lineHeight: 20,
       fontWeight: '600',
     },
+    nudgeOptionList: {
+      gap: 8,
+    },
+    nudgeOptionCard: {
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.white,
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+    },
+    nudgeOptionText: {
+      color: theme.colors.primaryDark,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '600',
+    },
   });
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>AI Listening Engine</Text>
-        <Text style={styles.subtitle}>Communication flow for realtime speech with OpenAI.</Text>
+        <Text style={styles.subtitle}>Realtime speech assistant with OpenAI.</Text>
 
         <View style={styles.statusRow}>
           <Text style={styles.statusLabel}>Engine Status</Text>
@@ -274,7 +227,7 @@ export const AiListeningEngineScreen = () => {
             {engine.nudgeLoading ? (
               <ActivityIndicator color={theme.colors.white} />
             ) : (
-              <Text style={styles.buttonText}>Nudge Me</Text>
+              <Text style={styles.buttonText}>Get Nudge Options</Text>
             )}
           </Pressable>
         </View>
@@ -286,64 +239,25 @@ export const AiListeningEngineScreen = () => {
         <View style={styles.nudgePanel}>
           {engine.nudgeLoading ? (
             <ActivityIndicator color={theme.colors.primary} />
+          ) : engine.nudgeOptions.length > 0 ? (
+            <View style={styles.nudgeOptionList}>
+              {engine.nudgeOptions.map((option, index) => (
+                <View key={`${option}-${index}`} style={styles.nudgeOptionCard}>
+                  <Text style={styles.nudgeOptionText}>{option}</Text>
+                </View>
+              ))}
+            </View>
           ) : engine.nudgeText ? (
             <Text style={styles.nudgeText}>{engine.nudgeText}</Text>
           ) : (
             <Text style={styles.emptyEventText}>
-              Tap "Nudge Me" when you get stuck. The assistant will suggest your next line.
+              Tap "Get Nudge Options" when you get stuck. The assistant will suggest multiple next lines.
             </Text>
           )}
         </View>
 
         {engine.error ? <Text style={styles.errorText}>{engine.error}</Text> : null}
 
-        <Text style={styles.sectionTitle}>THE COMMUNICATION FLOW</Text>
-        {FLOW_STEPS.map((step) => (
-          <View
-            key={step.id}
-            style={[styles.stepCard, engine.completedSteps[step.id] ? styles.stepDone : null]}
-          >
-            <Text style={styles.stepTitle}>{step.label}</Text>
-            <Text style={styles.stepText}>{step.description}</Text>
-          </View>
-        ))}
-
-        <Text style={styles.sectionTitle}>LIVE TRANSCRIPT</Text>
-        <View style={styles.transcriptPanel}>
-          {engine.liveTranscript ? (
-            <Text style={styles.transcriptText}>{engine.liveTranscript}</Text>
-          ) : (
-            <Text style={styles.emptyEventText}>Transcript will appear while conversation is detected.</Text>
-          )}
-        </View>
-
-        <Text style={styles.sectionTitle}>GENERATED HASHTAGS</Text>
-        {engine.hashtags.length > 0 ? (
-          <View style={styles.hashtagRow}>
-            {engine.hashtags.map((tag) => (
-              <View key={tag} style={styles.hashtagChip}>
-                <Text style={styles.hashtagText}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        ) : (
-          <Text style={styles.emptyEventText}>Hashtags will be generated from the live transcript.</Text>
-        )}
-
-        <Text style={styles.sectionTitle}>CLIENT EVENTS</Text>
-        <View style={styles.eventPanel}>
-          {engine.events.length === 0 ? (
-            <Text style={styles.emptyEventText}>
-              No events yet. Press Start to open WebRTC and stream events.
-            </Text>
-          ) : (
-            engine.events.map((event) => (
-              <Text key={event.id} style={styles.eventText}>
-                [{event.createdAt}] {event.type}: {event.message}
-              </Text>
-            ))
-          )}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );

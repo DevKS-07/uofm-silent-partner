@@ -20,6 +20,7 @@ type LinkedInUserInfo = {
 };
 
 type LinkedInMe = Record<string, unknown>;
+type ProfileDataApiResponse = Record<string, unknown> | string | null;
 
 export type LinkedInConnectionSummary = {
   name: string;
@@ -138,25 +139,80 @@ const fetchLinkedInProfile = async (accessToken: string): Promise<{ userInfo: Li
   return { userInfo, me };
 };
 
-const saveLinkedInProfile = async (
+const parseResponseBody = async (response: Response): Promise<ProfileDataApiResponse> => {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try {
+      return (await response.json()) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return await response.text();
+  } catch {
+    return null;
+  }
+};
+
+const getIdFromName = (name: string): string | null =>
+  (
+    {
+      "Sayed Samin ur Rahman": "samin-ur-rahman",
+      "Gurneet Kaur": "kgurneet",
+      "Priya Pandey": "priya--",
+      "Roshan Chapagain": "roshan-chapagain",
+      "Dev K Sarthi": "dev-k-sarthi-a860052a5",
+    } as Record<string, string>
+  )[name] || null;
+
+const requestProfileDataSync = async (profileName: string): Promise<ProfileDataApiResponse> => {
+  const mappedProfileName = getIdFromName(profileName) ?? profileName;
+  const response = await fetch('https://gw.magicalapi.com/profile-data', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': 'mag_76510521df5023f91c01122560b40d916084880',
+    },
+    body: JSON.stringify({
+      profile_name: mappedProfileName,
+      webhook_url: 'https://silentpartner-linkedin-data-reciever-production.up.railway.app/webhook/linkedin-profile',
+    }),
+  });
+
+  const responseBody = await parseResponseBody(response);
+  if (!response.ok) {
+    const details =
+      typeof responseBody === 'string'
+        ? responseBody
+        : responseBody && typeof responseBody === 'object'
+          ? JSON.stringify(responseBody)
+          : '';
+    throw new Error(
+      details
+        ? `LinkedIn processing service returned ${response.status}: ${details}`
+        : `LinkedIn processing service returned ${response.status}.`,
+    );
+  }
+
+  return responseBody;
+};
+
+const saveLinkedInSyncResult = async (
   userId: string,
-  profile: { userInfo: LinkedInUserInfo; me: LinkedInMe },
+  profileName: string,
+  responseBody: ProfileDataApiResponse,
 ): Promise<void> => {
   await docRef(`users/${userId}`).set(
     {
-      linkedin: {
-        name: profile.userInfo.name ?? '',
-        email: profile.userInfo.email ?? '',
-        picture: profile.userInfo.picture ?? '',
-        sub: profile.userInfo.sub ?? '',
-        headline: (profile.me.headline as string | undefined) ?? '',
-        summary: (profile.me.summary as string | undefined) ?? '',
-        firstName: (profile.me.firstName as Record<string, unknown> | undefined) ?? {},
-        lastName: (profile.me.lastName as Record<string, unknown> | undefined) ?? {},
-        positions: (profile.me.positions as { elements?: unknown[] } | undefined)?.elements ?? [],
-        educations: (profile.me.educations as { elements?: unknown[] } | undefined)?.elements ?? [],
-        rawMe: profile.me,
+      profile_name: profileName,
+      isConnected: true,
+      linkedinProfileDataRequest: {
+        profile_name: profileName,
+        webhook_url: 'https://silentpartner-linkedin-data-reciever-production.up.railway.app/webhook/linkedin-profile',
       },
+      linkedinProfileDataResponse: responseBody,
       linkedinConnected: true,
       linkedinConnectedAt: new Date().toISOString(),
     },
@@ -185,7 +241,12 @@ export const connectLinkedInForUser = async (userId: string): Promise<LinkedInCo
 
   const accessToken = await exchangeCodeForToken(code);
   const profile = await fetchLinkedInProfile(accessToken);
-  await saveLinkedInProfile(userId, profile);
+  const profileName = profile.userInfo.name ?? '';
+  if (!profileName) {
+    throw new Error('LinkedIn did not return a name for this account.');
+  }
+  const profileDataResponse = await requestProfileDataSync(profileName);
+  await saveLinkedInSyncResult(userId, profileName, profileDataResponse);
   return buildConnectionSummary(profile);
 };
 
