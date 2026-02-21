@@ -269,6 +269,13 @@ export const ProfessionalIdentityScreen = () => {
           <Text style={styles.listeningText}>AI listening engine</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.listeningButton}
+          onPress={() => router.replace('/(tabs)/personalize')}
+        >
+          <Text style={styles.listeningText}>Continue as Guest</Text>
+        </TouchableOpacity>
+
         <Text style={styles.privacy}>Your data is encrypted and never sold.</Text>
 
         {linkedInConnected && linkedInProfile ? (
@@ -292,7 +299,7 @@ export const ProfessionalIdentityScreen = () => {
             <Text style={styles.profileLabel}>
               Positions: {linkedInProfile.positionCount} | Education: {linkedInProfile.educationCount}
             </Text>
-            <TouchableOpacity style={styles.continueButton} onPress={() => router.push('/primary-goal')}>
+            <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('/(tabs)/personalize')}>
               <Text style={styles.continueText}>Continue</Text>
             </TouchableOpacity>
           </View>

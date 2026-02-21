@@ -1,197 +1,404 @@
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../../../providers/auth-provider";
+import { docRef } from "../../../services/firebase/firestore";
+import { colors as COLORS } from "../../../theme/tokens";
+import { ALL_EVENTS, type AppEvent } from "../../../data/events";
 
-import { useAuth } from '../../../providers/auth-provider';
-import { useTheme } from '../../../providers/theme-provider';
+const POPULAR_COUNT = 3;
 
-const SIDEBAR_ITEMS = ['Home', 'Projects', 'Analytics', 'Settings'] as const;
+type Tab = "events" | "registered";
 
-export const DashboardScreen = () => {
-  const theme = useTheme();
-  const { user, signOut } = useAuth();
-  const { width } = useWindowDimensions();
-  const isMobile = width < 960;
-  const [isSidebarOpen, setIsSidebarOpen] = useState(!isMobile);
+const useSlideIn = (delay: number) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 400,
+      delay,
+      useNativeDriver: true,
+    }).start();
+  }, [anim, delay]);
+  const translateY = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [28, 0],
+  });
+  return { opacity: anim, transform: [{ translateY }] };
+};
+
+const EventCard = ({
+  event,
+  onPress,
+}: {
+  event: AppEvent;
+  onPress: () => void;
+}) => (
+  <TouchableOpacity activeOpacity={0.88} style={styles.eventCard} onPress={onPress}>
+    <View style={styles.eventInfo}>
+      <Text style={styles.eventName}>{event.name}</Text>
+      <View style={styles.eventMeta}>
+        <Ionicons name="location-outline" size={13} color={COLORS.mediumGray} />
+        <Text style={styles.eventMetaText}>{event.location}</Text>
+        <Ionicons
+          name="calendar-outline"
+          size={13}
+          color={COLORS.mediumGray}
+          style={{ marginLeft: 10 }}
+        />
+        <Text style={styles.eventMetaText}>{event.date}</Text>
+      </View>
+    </View>
+    <View style={styles.arrowButton}>
+      <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
+    </View>
+  </TouchableOpacity>
+);
+
+const JoinEventScreen = () => {
+  const router = useRouter();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>("events");
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [registeredEvents, setRegisteredEvents] = useState<AppEvent[]>([]);
+
+  const headerAnim = useSlideIn(0);
+  const searchAnim = useSlideIn(120);
+  const qrAnim = useSlideIn(220);
+  const eventsLabelAnim = useSlideIn(320);
 
   useEffect(() => {
-    setIsSidebarOpen(!isMobile);
-  }, [isMobile]);
+    if (!user) return;
+    docRef<Record<string, any>>(`users/${user.uid}`)
+      .get()
+      .then((snap) => {
+        if (!snap.exists) return;
+        const data = snap.data();
+        setRegisteredEvents(data?.registeredEvents ?? []);
+      });
+  }, [user]);
 
-  const styles = StyleSheet.create({
-    screen: {
-      flex: 1,
-      backgroundColor: theme.colors.background,
-    },
-    navbar: {
-      height: 64,
-      backgroundColor: theme.colors.surface,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-      paddingHorizontal: theme.spacing.lg,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    navLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: theme.spacing.md,
-    },
-    menuButton: {
-      width: 36,
-      height: 36,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radius.sm,
-      backgroundColor: theme.colors.surface,
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 4,
-    },
-    menuBar: {
-      width: 16,
-      height: 2,
-      borderRadius: 2,
-      backgroundColor: theme.colors.textPrimary,
-    },
-    brand: {
-      color: theme.colors.textPrimary,
-      fontSize: 18,
-      fontWeight: '700',
-    },
-    userArea: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: theme.spacing.md,
-    },
-    userText: {
-      color: theme.colors.textSecondary,
-      fontSize: theme.typography.caption,
-      maxWidth: 220,
-    },
-    logoutButton: {
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radius.sm,
-      paddingVertical: theme.spacing.sm,
-      paddingHorizontal: theme.spacing.md,
-      backgroundColor: theme.colors.surface,
-    },
-    logoutText: {
-      color: theme.colors.textPrimary,
-      fontSize: theme.typography.caption,
-      fontWeight: '600',
-    },
-    shell: {
-      flex: 1,
-      flexDirection: 'row',
-      position: 'relative',
-    },
-    sidebar: {
-      width: 220,
-      borderRightWidth: 1,
-      borderRightColor: theme.colors.border,
-      backgroundColor: theme.colors.surface,
-      padding: theme.spacing.lg,
-      gap: theme.spacing.sm,
-    },
-    mobileSidebar: {
-      position: 'absolute',
-      left: 0,
-      top: 0,
-      bottom: 0,
-      zIndex: 20,
-      shadowColor: '#000000',
-      shadowOpacity: 0.12,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 8,
-    },
-    backdrop: {
-      position: 'absolute',
-      top: 0,
-      right: 0,
-      bottom: 0,
-      left: 0,
-      backgroundColor: 'rgba(2, 6, 23, 0.2)',
-      zIndex: 10,
-    },
-    sidebarItem: {
-      paddingVertical: theme.spacing.md,
-      paddingHorizontal: theme.spacing.md,
-      borderRadius: theme.radius.sm,
-      backgroundColor: theme.colors.background,
-    },
-    sidebarItemActive: {
-      backgroundColor: '#E8F1FF',
-      borderWidth: 1,
-      borderColor: '#C7DBFF',
-    },
-    sidebarText: {
-      color: theme.colors.textPrimary,
-      fontSize: theme.typography.body,
-      fontWeight: '500',
-    },
-    main: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: theme.spacing.xl,
-    },
-    mainTitle: {
-      color: theme.colors.textPrimary,
-      fontSize: 28,
-      fontWeight: '700',
-      marginBottom: theme.spacing.sm,
-      textAlign: 'center',
-    },
-    mainBody: {
-      color: theme.colors.textSecondary,
-      fontSize: theme.typography.body,
-      textAlign: 'center',
-    },
-  });
+  const displayedEvents = showAllEvents
+    ? ALL_EVENTS
+    : ALL_EVENTS.slice(0, POPULAR_COUNT);
+
+  // ─── Events tab ────────────────────────────────────────────────────────────
+
+  const renderEventsTab = () => (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <Animated.View style={[styles.header, headerAnim]}>
+        <Text style={styles.title}>Join Event</Text>
+        <Text style={styles.subtitle}>
+          Find your conference or meetup to start networking.
+        </Text>
+      </Animated.View>
+
+      <Animated.View style={[styles.searchContainer, searchAnim]}>
+        <Ionicons
+          name="search-outline"
+          size={18}
+          color={COLORS.mediumGray}
+          style={styles.searchIcon}
+        />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search for an event..."
+          placeholderTextColor={COLORS.mediumGray}
+        />
+      </Animated.View>
+
+      <Animated.View style={qrAnim}>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          style={styles.qrCard}
+          onPress={() => router.push("/qr-scanner")}
+        >
+          <View style={styles.qrIconWrapper}>
+            <MaterialCommunityIcons
+              name="qrcode-scan"
+              size={32}
+              color={COLORS.primary}
+            />
+          </View>
+          <Text style={styles.qrTitle}>Scan Event QR Code</Text>
+          <Text style={styles.qrSubtitle}>Check-in instantly at the venue</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      <Animated.View style={[styles.sectionRow, eventsLabelAnim]}>
+        <Text style={styles.sectionLabel}>POPULAR EVENTS</Text>
+        <TouchableOpacity onPress={() => setShowAllEvents((v) => !v)}>
+          <Text style={styles.seeAllText}>
+            {showAllEvents ? "Show less" : "See all"}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      {displayedEvents.map((event) => (
+        <EventCard
+          key={event.id}
+          event={event}
+          onPress={() =>
+            router.push({
+              pathname: '/events/[id]',
+              params: { id: event.id },
+            })
+          }
+        />
+      ))}
+    </ScrollView>
+  );
+
+  // ─── Registered tab ────────────────────────────────────────────────────────
+
+  const renderRegisteredTab = () => (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text style={styles.tabPageTitle}>Registered Events</Text>
+      {registeredEvents.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons
+            name="calendar-outline"
+            size={56}
+            color={COLORS.lightGray}
+          />
+          <Text style={styles.emptyTitle}>No Registered Events</Text>
+          <Text style={styles.emptySubtitle}>
+            Events you join will appear here.
+          </Text>
+        </View>
+      ) : (
+        registeredEvents.map((event) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            onPress={() =>
+              router.push({
+                pathname: '/events/[id]',
+                params: { id: event.id },
+              })
+            }
+          />
+        ))
+      )}
+    </ScrollView>
+  );
+
 
   return (
-    <SafeAreaView edges={['top']} style={styles.screen}>
-      <View style={styles.navbar}>
-        <View style={styles.navLeft}>
-          <Pressable onPress={() => setIsSidebarOpen((prev) => !prev)} style={styles.menuButton}>
-            <View style={styles.menuBar} />
-            <View style={styles.menuBar} />
-            <View style={styles.menuBar} />
-          </Pressable>
-          <Text style={styles.brand}>Dashboard</Text>
-        </View>
-        <View style={styles.userArea}>
-          <Text numberOfLines={1} style={styles.userText}>
-            {user?.email ?? 'Signed in'}
-          </Text>
-          <Pressable onPress={() => void signOut()} style={styles.logoutButton}>
-            <Text style={styles.logoutText}>Sign out</Text>
-          </Pressable>
-        </View>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.content}>
+        {activeTab === "events" && renderEventsTab()}
+        {activeTab === "registered" && renderRegisteredTab()}
       </View>
 
-      <View style={styles.shell}>
-        {isSidebarOpen ? (
-          <View style={[styles.sidebar, isMobile ? styles.mobileSidebar : null]}>
-            {SIDEBAR_ITEMS.map((item, index) => (
-              <View key={item} style={[styles.sidebarItem, index === 0 ? styles.sidebarItemActive : null]}>
-                <Text style={styles.sidebarText}>{item}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        {isMobile && isSidebarOpen ? <Pressable onPress={() => setIsSidebarOpen(false)} style={styles.backdrop} /> : null}
-
-        <View style={styles.main}>
-          <Text style={styles.mainTitle}>Empty Dashboard</Text>
-          <Text style={styles.mainBody}>Your authenticated app content will render here.</Text>
-        </View>
+      <View style={styles.tabBar}>
+        {(
+          [
+            { key: "events", label: "Events", icon: "home" },
+            { key: "registered", label: "Registered", icon: "calendar" },
+          ] as { key: Tab; label: string; icon: string }[]
+        ).map(({ key, label, icon }) => {
+          const active = activeTab === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={styles.tabItem}
+              onPress={() => setActiveTab(key)}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={(active ? icon : `${icon}-outline`) as any}
+                size={24}
+                color={active ? COLORS.primary : COLORS.mediumGray}
+              />
+              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => router.push("/(tabs)/profile")}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="person-outline" size={24} color={COLORS.mediumGray} />
+          <Text style={styles.tabLabel}>Profile</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: COLORS.white },
+  content: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 40 },
+
+  // Events tab
+  header: { marginBottom: 24, alignItems: "center" },
+  title: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: COLORS.black,
+    marginBottom: 6,
+    letterSpacing: -0.5,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 15,
+    color: COLORS.mediumGray,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.gray,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.borderColor,
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.black },
+  qrCard: {
+    backgroundColor: "#F5F0FF",
+    borderRadius: 16,
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: "#E0D0FF",
+  },
+  qrIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#EDE5FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#D4BEFF",
+  },
+  qrTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: COLORS.black,
+    marginBottom: 4,
+  },
+  qrSubtitle: { fontSize: 13, color: COLORS.mediumGray },
+  sectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: COLORS.mediumGray,
+    letterSpacing: 1.2,
+  },
+  seeAllText: { fontSize: 13, fontWeight: "600", color: COLORS.primary },
+  eventCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.borderColor,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  eventInfo: { flex: 1 },
+  eventName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: COLORS.black,
+    marginBottom: 5,
+  },
+  eventMeta: { flexDirection: "row", alignItems: "center" },
+  eventMetaText: { fontSize: 12, color: COLORS.mediumGray, marginLeft: 3 },
+  arrowButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12,
+  },
+
+  // Registered tab
+  tabPageTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: COLORS.black,
+    marginBottom: 20,
+    letterSpacing: -0.5,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingTop: 80,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: COLORS.black,
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: COLORS.mediumGray,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+
+  // Bottom tab bar
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: COLORS.white,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderColor,
+    paddingBottom: 8,
+    paddingTop: 10,
+  },
+  tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 4 },
+  tabLabel: { fontSize: 11, fontWeight: "500", color: COLORS.mediumGray },
+  tabLabelActive: { color: COLORS.primary, fontWeight: "700" },
+});
+
+export default JoinEventScreen;

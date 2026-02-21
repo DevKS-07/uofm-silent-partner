@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,50 +8,150 @@ import {
   Animated,
   Easing,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
 
 import { useTheme } from "../../../../src/providers/theme-provider";
 
-export default function StartNetworkingScreen({ id }: { id: string }) {
+// ─── Data ─────────────────────────────────────────────────────────────────────
+
+const STEPS = [
+  { icon: "people-outline" as const,         label: "Scanning 12,547 attendee profiles..." },
+  { icon: "document-text-outline" as const,  label: "Analyzing your professional background..." },
+  { icon: "heart-outline" as const,          label: "Detecting shared interests & goals..." },
+  { icon: "chatbubbles-outline" as const,    label: "Mapping conversational chemistry..." },
+  { icon: "trophy-outline" as const,         label: "Finalizing your top matches..." },
+];
+
+const STEP_MS = 1100; // per step → 5 × 1100 = 5 500 ms total
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function StartNetworkingScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { id } = useLocalSearchParams<{ id: string }>();
+
   const [isSearching, setIsSearching] = useState(false);
-  const [thinkingMessage, setThinkingMessage] = useState(0);
+  const [activeStep, setActiveStep] = useState(0);
+  const [showResult, setShowResult] = useState(false);
 
-  const rotateAnim = useRef(new Animated.Value(0)).current;
+  // 3 expanding rings
+  const ring1Scale   = useRef(new Animated.Value(1)).current;
+  const ring1Opacity = useRef(new Animated.Value(0)).current;
+  const ring2Scale   = useRef(new Animated.Value(1)).current;
+  const ring2Opacity = useRef(new Animated.Value(0)).current;
+  const ring3Scale   = useRef(new Animated.Value(1)).current;
+  const ring3Opacity = useRef(new Animated.Value(0)).current;
 
-  const messages = [
-    "Analyzing compatibility...",
-    "Detecting shared interests...",
-    "Mapping conversational chemistry...",
-    "Finding your best matches...",
-  ];
+  // Center orb gentle pulse
+  const centerScale = useRef(new Animated.Value(1)).current;
 
-  const handleStartNetworking = () => {
-    setIsSearching(true);
+  // Horizontal progress bar (width %, needs useNativeDriver: false)
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
-    Animated.loop(
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration: 4000,
-        easing: Easing.linear,
+  // Step text slide-in
+  const stepOpacity   = useRef(new Animated.Value(0)).current;
+  const stepTranslate = useRef(new Animated.Value(12)).current;
+
+  // Result card reveal
+  const resultOpacity = useRef(new Animated.Value(0)).current;
+  const resultScale   = useRef(new Animated.Value(0.6)).current;
+
+  const alive = useRef(false);
+
+  // ── Ring pulse (recursive so it self-resets) ──────────────────────────────
+  const pulseRing = (scale: Animated.Value, opacity: Animated.Value) => {
+    if (!alive.current) return;
+    scale.setValue(1);
+    opacity.setValue(0);
+    Animated.parallel([
+      Animated.timing(scale, {
+        toValue: 2.8,
+        duration: 2000,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-    ).start();
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.45, duration: 300, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0,    duration: 1700, useNativeDriver: true }),
+      ]),
+    ]).start(({ finished }) => {
+      if (finished) pulseRing(scale, opacity);
+    });
   };
 
-  const rotate = rotateAnim.interpolate({
+  // ── Animate step text into view ───────────────────────────────────────────
+  const revealStep = (idx: number) => {
+    setActiveStep(idx);
+    stepOpacity.setValue(0);
+    stepTranslate.setValue(12);
+    Animated.parallel([
+      Animated.timing(stepOpacity,   { toValue: 1, duration: 260, useNativeDriver: true }),
+      Animated.timing(stepTranslate, { toValue: 0, duration: 260, useNativeDriver: true }),
+    ]).start();
+  };
+
+  // ── Main handler ──────────────────────────────────────────────────────────
+  const handleStartNetworking = () => {
+    setIsSearching(true);
+    setShowResult(false);
+    setActiveStep(0);
+    alive.current = true;
+
+    // Staggered ring pulses
+    pulseRing(ring1Scale, ring1Opacity);
+    setTimeout(() => pulseRing(ring2Scale, ring2Opacity), 667);
+    setTimeout(() => pulseRing(ring3Scale, ring3Opacity), 1334);
+
+    // Gentle orb breathe
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(centerScale, { toValue: 1.13, duration: 750, useNativeDriver: true }),
+        Animated.timing(centerScale, { toValue: 1.00, duration: 750, useNativeDriver: true }),
+      ]),
+    ).start();
+
+    // Progress bar fills over the full duration
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: STEPS.length * STEP_MS,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: false,
+    }).start();
+
+    // Cycle step messages
+    revealStep(0);
+    STEPS.slice(1).forEach((_, i) =>
+      setTimeout(() => revealStep(i + 1), (i + 1) * STEP_MS),
+    );
+
+    // After all steps → show result → navigate
+    setTimeout(() => {
+      alive.current = false;
+      setShowResult(true);
+      Animated.parallel([
+        Animated.spring(resultScale,   { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }),
+        Animated.timing(resultOpacity, { toValue: 1, duration: 320, useNativeDriver: true }),
+      ]).start();
+      setTimeout(() => router.push(`/events/${id}/matches`), 900);
+    }, STEPS.length * STEP_MS + 400);
+  };
+
+  const progressWidth = progressAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
+    outputRange: ["0%", "100%"],
   });
 
+  // ── Styles ────────────────────────────────────────────────────────────────
   const styles = StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
       paddingTop: theme.spacing.xxl,
     },
+
+    // ─ Top bar
     header: {
       flexDirection: "row",
       justifyContent: "space-between",
@@ -59,30 +159,13 @@ export default function StartNetworkingScreen({ id }: { id: string }) {
       alignItems: "center",
       marginBottom: theme.spacing.lg,
     },
-    profileRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: theme.spacing.md,
-    },
-    avatar: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-    },
-    welcome: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-    },
-    name: {
-      fontSize: 14,
-      fontWeight: "bold",
-      color: theme.colors.textPrimary,
-    },
-    menuBtn: {
-      padding: theme.spacing.sm,
-      backgroundColor: theme.colors.gray,
-      borderRadius: 20,
-    },
+    profileRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
+    avatar:     { width: 40, height: 40, borderRadius: 20 },
+    welcome:    { fontSize: 12, color: theme.colors.textSecondary },
+    name:       { fontSize: 14, fontWeight: "bold", color: theme.colors.textPrimary },
+    menuBtn:    { padding: theme.spacing.sm, backgroundColor: theme.colors.gray, borderRadius: 20 },
+
+    // ─ Event card
     card: {
       backgroundColor: theme.colors.surface,
       marginHorizontal: theme.spacing.lg,
@@ -92,44 +175,17 @@ export default function StartNetworkingScreen({ id }: { id: string }) {
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
-    badge: {
-      color: theme.colors.primary,
-      fontSize: 12,
-      marginBottom: theme.spacing.sm,
-      fontWeight: "600",
-    },
-    cardTitle: {
-      fontSize: 20,
-      fontWeight: "bold",
-      color: theme.colors.textPrimary,
-      marginBottom: theme.spacing.sm,
-    },
-    cardSub: {
-      color: theme.colors.textSecondary,
-      fontSize: 14,
-      marginBottom: theme.spacing.md,
-    },
-    progressBar: {
-      height: 6,
-      backgroundColor: theme.colors.lightGray,
-      borderRadius: theme.radius.md,
-      overflow: "hidden",
-    },
-    progressFill: {
-      width: "75%",
-      height: "100%",
-      backgroundColor: theme.colors.primary,
-    },
-    progressText: {
-      marginTop: theme.spacing.sm,
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-    },
-    centerArea: {
-      flex: 1,
-      justifyContent: "center",
-      alignItems: "center",
-    },
+    badge:        { color: theme.colors.primary, fontSize: 12, marginBottom: theme.spacing.sm, fontWeight: "600" },
+    cardTitle:    { fontSize: 20, fontWeight: "bold", color: theme.colors.textPrimary, marginBottom: theme.spacing.sm },
+    cardSub:      { color: theme.colors.textSecondary, fontSize: 14, marginBottom: theme.spacing.md },
+    progressBar:  { height: 6, backgroundColor: theme.colors.lightGray, borderRadius: theme.radius.md, overflow: "hidden" },
+    progressFill: { width: "75%", height: "100%", backgroundColor: theme.colors.primary },
+    progressText: { marginTop: theme.spacing.sm, fontSize: 12, color: theme.colors.textSecondary },
+
+    // ─ Center area
+    centerArea: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+    // ─ Idle button
     mainButton: {
       width: 180,
       height: 180,
@@ -140,64 +196,116 @@ export default function StartNetworkingScreen({ id }: { id: string }) {
       justifyContent: "center",
       alignItems: "center",
     },
-    mainButtonText: {
-      marginTop: theme.spacing.md,
-      fontSize: 16,
-      fontWeight: "bold",
-      color: theme.colors.textPrimary,
-    },
-    subText: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-    },
-    searchContainer: {
-      alignItems: "center",
-    },
-    spinner: {
-      width: 120,
-      height: 120,
-      borderRadius: 60,
-      borderWidth: 4,
+    mainButtonText: { marginTop: theme.spacing.md, fontSize: 16, fontWeight: "bold", color: theme.colors.textPrimary },
+    subText:        { fontSize: 12, color: theme.colors.textSecondary },
+
+    // ─ Loading state wrapper
+    searchContainer: { alignItems: "center", width: "100%", paddingHorizontal: theme.spacing.xl },
+
+    // ─ Orb + rings
+    orbWrap: { width: 160, height: 160, alignItems: "center", justifyContent: "center", marginBottom: 32 },
+    ring: {
+      position: "absolute",
+      width: 140,
+      height: 140,
+      borderRadius: 70,
+      borderWidth: 2,
       borderColor: theme.colors.primary,
-      borderTopColor: "transparent",
-      marginBottom: theme.spacing.lg,
     },
-    thinkingText: {
-      fontSize: 16,
-      color: theme.colors.textPrimary,
-      textAlign: "center",
-    },
-    bottomNav: {
-      height: 80,
-      flexDirection: "row",
-      justifyContent: "space-around",
+    orb: {
+      width: 110,
+      height: 110,
+      borderRadius: 55,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 2,
+      borderColor: theme.colors.primary,
       alignItems: "center",
+      justifyContent: "center",
+      shadowColor: theme.colors.primary,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.25,
+      shadowRadius: 16,
+      elevation: 6,
+    },
+
+    // ─ Step indicator dots
+    dotsRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
+    dot:       { width: 8,  height: 8,  borderRadius: 4, backgroundColor: theme.colors.lightGray },
+    dotActive: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.primary, marginTop: -1 },
+    dotDone:   { width: 8,  height: 8,  borderRadius: 4, backgroundColor: theme.colors.primary, opacity: 0.4 },
+
+    // ─ Step text
+    stepRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 28, minHeight: 28 },
+    stepIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: "#E8F8F3",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    stepText: { fontSize: 14, color: theme.colors.textPrimary, fontWeight: "500", flex: 1 },
+
+    // ─ Progress track
+    trackOuter: {
+      width: "100%",
+      height: 4,
+      backgroundColor: theme.colors.lightGray,
+      borderRadius: 2,
+      overflow: "hidden",
+    },
+    trackFill: { height: "100%", backgroundColor: theme.colors.primary, borderRadius: 2 },
+
+    // ─ Result reveal
+    resultCard: {
+      alignItems: "center",
+      padding: 28,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      width: "90%",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.06,
+      shadowRadius: 16,
+      elevation: 4,
+    },
+    resultIconWrap: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: "#E8F8F3",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+    resultCount:    { fontSize: 40, fontWeight: "800", color: theme.colors.textPrimary, lineHeight: 48 },
+    resultLabel:    { fontSize: 16, fontWeight: "600", color: theme.colors.textPrimary, marginBottom: 6 },
+    resultSub:      { fontSize: 13, color: theme.colors.textSecondary },
+
+    // ─ Bottom nav
+    bottomNav: {
+      flexDirection: "row",
+      backgroundColor: theme.colors.background,
       borderTopWidth: 1,
       borderTopColor: theme.colors.border,
-      backgroundColor: theme.colors.background,
+      paddingBottom: 8,
+      paddingTop: 10,
     },
-    navItem: {
-      alignItems: "center",
-    },
-    navText: {
-      fontSize: 10,
-      color: theme.colors.textSecondary,
-    },
-    navActive: {
-      fontSize: 10,
-      color: theme.colors.primary,
-    },
+    navItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 4 },
+    navText: { fontSize: 11, fontWeight: "500", color: theme.colors.textSecondary },
   });
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Top Bar */}
+
+      {/* Top bar */}
       <View style={styles.header}>
         <View style={styles.profileRow}>
           <Image
-            source={{
-              uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80",
-            }}
+            source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80" }}
             style={styles.avatar}
           />
           <View>
@@ -205,27 +313,27 @@ export default function StartNetworkingScreen({ id }: { id: string }) {
             <Text style={styles.name}>Alex Johnson</Text>
           </View>
         </View>
-
         <TouchableOpacity style={styles.menuBtn}>
           <Feather name="menu" size={20} color={theme.colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
-      {/* Event Card */}
+      {/* Event card */}
       <View style={styles.card}>
         <Text style={styles.badge}>Live Event</Text>
         <Text style={styles.cardTitle}>TechCrunch Disrupt 2026</Text>
         <Text style={styles.cardSub}>Moscone Center • 12.5k Attendees</Text>
-
         <View style={styles.progressBar}>
           <View style={styles.progressFill} />
         </View>
         <Text style={styles.progressText}>Day 2 of 3</Text>
       </View>
 
-      {/* Center Area */}
+      {/* Center area */}
       <View style={styles.centerArea}>
-        {!isSearching ? (
+
+        {/* ── Idle ────────────────────────────────────────── */}
+        {!isSearching && (
           <TouchableOpacity
             style={styles.mainButton}
             activeOpacity={0.8}
@@ -235,55 +343,115 @@ export default function StartNetworkingScreen({ id }: { id: string }) {
             <Text style={styles.mainButtonText}>Find My People</Text>
             <Text style={styles.subText}>AI-Powered Match</Text>
           </TouchableOpacity>
-        ) : (
+        )}
+
+        {/* ── Loading ──────────────────────────────────────── */}
+        {isSearching && !showResult && (
           <View style={styles.searchContainer}>
+
+            {/* Orb + 3 expanding rings */}
+            <View style={styles.orbWrap}>
+              <Animated.View
+                style={[styles.ring, { transform: [{ scale: ring1Scale }], opacity: ring1Opacity }]}
+              />
+              <Animated.View
+                style={[styles.ring, { transform: [{ scale: ring2Scale }], opacity: ring2Opacity }]}
+              />
+              <Animated.View
+                style={[styles.ring, { transform: [{ scale: ring3Scale }], opacity: ring3Opacity }]}
+              />
+              <Animated.View style={[styles.orb, { transform: [{ scale: centerScale }] }]}>
+                <Ionicons name="compass" size={38} color={theme.colors.primary} />
+              </Animated.View>
+            </View>
+
+            {/* Step dots */}
+            <View style={styles.dotsRow}>
+              {STEPS.map((_, i) => (
+                <View
+                  key={i}
+                  style={
+                    i < activeStep
+                      ? styles.dotDone
+                      : i === activeStep
+                      ? styles.dotActive
+                      : styles.dot
+                  }
+                />
+              ))}
+            </View>
+
+            {/* Current step text */}
             <Animated.View
               style={[
-                styles.spinner,
-                {
-                  transform: [{ rotate }],
-                },
+                styles.stepRow,
+                { opacity: stepOpacity, transform: [{ translateY: stepTranslate }] },
               ]}
-            />
-            <Text style={styles.thinkingText}>{messages[thinkingMessage]}</Text>
+            >
+              <View style={styles.stepIcon}>
+                <Ionicons
+                  name={STEPS[activeStep]?.icon ?? "ellipsis-horizontal"}
+                  size={14}
+                  color={theme.colors.primary}
+                />
+              </View>
+              <Text style={styles.stepText}>{STEPS[activeStep]?.label ?? ""}</Text>
+            </Animated.View>
+
+            {/* Progress track */}
+            <View style={styles.trackOuter}>
+              <Animated.View style={[styles.trackFill, { width: progressWidth }]} />
+            </View>
+
           </View>
         )}
+
+        {/* ── Result ───────────────────────────────────────── */}
+        {showResult && (
+          <Animated.View
+            style={[
+              styles.resultCard,
+              { opacity: resultOpacity, transform: [{ scale: resultScale }] },
+            ]}
+          >
+            <View style={styles.resultIconWrap}>
+              <Ionicons name="checkmark-circle" size={32} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.resultCount}>2</Text>
+            <Text style={styles.resultLabel}>Perfect Matches Found!</Text>
+            <Text style={styles.resultSub}>Taking you there now...</Text>
+          </Animated.View>
+        )}
+
       </View>
 
-      {/* Bottom Nav */}
+      {/* Bottom nav */}
       <View style={styles.bottomNav}>
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => router.push(`/events/${id}/start-networking`)}
+          onPress={() => router.push("/(tabs)/dashboard")}
         >
-          <Ionicons name="compass" size={24} color={theme.colors.primary} />
-          <Text style={styles.navActive}>Explore</Text>
+          <Ionicons name="home-outline" size={24} color={theme.colors.textSecondary} />
+          <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => router.push(`/events/${id}/matches`)}
+          onPress={() => router.push("/(tabs)/dashboard")}
         >
-          <Ionicons
-            name="people"
-            size={24}
-            color={theme.colors.textSecondary}
-          />
-          <Text style={styles.navText}>Matches</Text>
+          <Ionicons name="calendar-outline" size={24} color={theme.colors.textSecondary} />
+          <Text style={styles.navText}>Registered</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => router.push(`/profile`)}
+          onPress={() => router.push("/(tabs)/profile")}
         >
-          <Ionicons
-            name="person"
-            size={24}
-            color={theme.colors.textSecondary}
-          />
+          <Ionicons name="person-outline" size={24} color={theme.colors.textSecondary} />
           <Text style={styles.navText}>Profile</Text>
         </TouchableOpacity>
       </View>
+
     </View>
   );
 }

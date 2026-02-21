@@ -1,5 +1,5 @@
-import { DashboardScreen } from '../../src/features/dashboard';
-import { RequireAuth } from '../../src/features/navigation';
+import { DashboardScreen } from "../../src/features/dashboard";
+import { RequireAuth } from "../../src/features/navigation";
 
 export default function DashboardRoute() {
   return (

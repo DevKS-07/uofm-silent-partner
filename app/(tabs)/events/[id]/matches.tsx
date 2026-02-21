@@ -8,6 +8,7 @@ import {
   ScrollView,
   Modal,
   Dimensions,
+  TouchableOpacity,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
@@ -228,6 +229,30 @@ export default function MatchesScreen({ id }: { id: string }) {
       fontWeight: "800",
       color: theme.colors.white,
     },
+    bottomNav: {
+      flexDirection: "row",
+      backgroundColor: theme.colors.background,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      paddingBottom: 8,
+      paddingTop: 10,
+    },
+    navItem: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+    navText: {
+      fontSize: 11,
+      fontWeight: "500",
+      color: theme.colors.textSecondary,
+    },
+    navTextActive: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: theme.colors.primary,
+    },
   });
 
   return (
@@ -385,6 +410,30 @@ export default function MatchesScreen({ id }: { id: string }) {
           </View>
         )}
       </Modal>
+
+      {/* Bottom Nav */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push("/(tabs)/dashboard")}
+        >
+          <Ionicons name="home-outline" size={24} color={theme.colors.textSecondary} />
+          <Text style={styles.navText}>Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navItem}>
+          <Ionicons name="people" size={24} color={theme.colors.primary} />
+          <Text style={styles.navTextActive}>Matches</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push("/(tabs)/profile")}
+        >
+          <Ionicons name="person-outline" size={24} color={theme.colors.textSecondary} />
+          <Text style={styles.navText}>Profile</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
