@@ -31,10 +31,10 @@ yarn-error.*
 *.pem
 
 # local env files
-# .env*.local
-# .env
-# .env.*
-# !.env.example
+.env*.local
+.env
+.env.*
+!.env.example
 
 # firebase native service files
 google-services.json
